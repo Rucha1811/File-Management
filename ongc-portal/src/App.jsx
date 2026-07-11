@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { api, setToken, getToken } from "./api";
+import { api, setToken, getToken, setOnUnauthorized } from "./api";
+import { useInactivityTracker } from "./hooks/useInactivityTracker";
+import { SessionTimeoutDialog } from "./components/SessionTimeoutDialog";
 import ActivityAnalytics from "./components/ActivityAnalytics";
 import ProjectCreation from "./components/ProjectCreation";
 import AnalyticalDashboard from "./components/AnalyticalDashboard";
@@ -17,7 +19,7 @@ import { PendingIssues } from "./components/modules/PendingIssues";
 import { Highlights } from "./components/modules/Highlights";
 import { TechnicalReports } from "./components/modules/TechnicalReports";
 import { SharePointTemp } from "./components/modules/SharePointTemp";
-import { AWP } from "./components/modules/AWP";
+
 import { Requests } from "./components/modules/Requests";
 import { ShareKnowledge } from "./components/modules/ShareKnowledge";
 import ReportBuilder from "./components/ReportBuilder";
@@ -52,8 +54,8 @@ function saveSubmenuTabs(label, tabs) {
 
 const MENU = [
   { label:"Dashboard", page:"Dashboard", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
-  { label:"KPI / Targets / AWP", page:"kpi-awp", roles:["admin","ops_manager"], levels:[2,3] },
-  { label:"Projects (Inhouse/Outsourced)", page:"projects", roles:["admin","ops_manager"], levels:[2,3] },
+  { label:"KPI / Targets / AWP", page:"kpi-awp", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
+  { label:"Projects", page:"projects", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Manpower Status", page:"manpower-status", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Contract / Tendering Status", page:"contract-status", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Fund Management", page:"fund-management", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
@@ -63,7 +65,6 @@ const MENU = [
   { label:"Pending vs Resolved Issues", page:"pending-issues", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Highlights", page:"highlights", roles:["admin","ops_manager"], levels:[2,3] },
   { label:"Share Point (Temporary File)", page:"sharepoint", roles:["admin","ops_manager"], levels:[2,3] },
-  { label:"AWP / My Annual Work Plan", page:"awp", roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Reports", submenu: [
     "Progress Report",
     "Technical Report",
@@ -80,7 +81,6 @@ const MENU = [
   { label:"Activity Analytics", page:"activity-analytics", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
   { label:"Users", page:"users", roles:["admin"], levels:[2] },
          { label:"Access Permissions", page:"access-permissions", roles:["admin"], levels:[2] },
-         { label:"Requests", page:"requests", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
   { label:"User Settings", page:"settings", roles:["admin","ops_manager"], levels:[2,3] },
   { label:"Log Out", action:"logout", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
 ];
@@ -108,11 +108,17 @@ function normalizeFile(f) {
     status: f.status,
     uploadedBy: f.uploaded_by,
     uploadedByName: f.uploaded_by_name || f.uploaded_by,
+    uploadedByCpf: f.uploaded_by_cpf,
+    uploadedByDesignation: f.uploaded_by_designation,
+    uploadedBySection: f.uploaded_by_section,
+    uploadedByArea: f.uploaded_by_area,
+    uploadedByCategory: f.uploaded_by_category,
     uploadDate: f.upload_date ? f.upload_date.split("T")[0] : "",
     fileSize: f.file_size || "—",
     filePath: f.file_path || "",
     snippet: f.snippet,
     summary: f.summary,
+    dynamicFields: (() => { try { return f.dynamic_fields ? JSON.parse(f.dynamic_fields) : {}; } catch { return {}; } })(),
   };
 }
 
@@ -211,7 +217,15 @@ function DrillDownModal({ drill, onClose }) {
                 <td style={S.td}>{f.fileType}</td>
                 <td style={S.td}>{f.section}</td>
                 <td style={S.td}>{f.category}</td>
-                <td style={S.td}>{f.uploadedByName}</td>
+                <td style={S.td} title={
+                  [f.uploadedByName,
+                    f.uploadedByDesignation ? `Designation: ${f.uploadedByDesignation}` : null,
+                    f.uploadedBySection ? `Section: ${f.uploadedBySection}` : null,
+                    f.uploadedByArea ? `Area: ${f.uploadedByArea}` : null,
+                    f.uploadedByCategory ? `Category: ${f.uploadedByCategory}` : null,
+                    f.uploadedByCpf ? `CPF: ${f.uploadedByCpf}` : null,
+                  ].filter(Boolean).join(" | ")
+                }>{f.uploadedByName}</td>
                 <td style={S.td}>{f.uploadDate}</td>
                 <td style={S.td}><span style={{ ...S.badge(statusColor[f.status], statusBg[f.status]) }}>{f.status}</span></td>
               </tr>
@@ -358,68 +372,68 @@ function LoginPage({ onLogin }) {
           {[
             { label:"Admin — full access", color:"#B71C1C", users:[
               {cpf:"100001",pw:"admin123",name:"Sh. Sandip Kumar Kaur",area:"All",cat:"—",om:"—"},
-              {cpf:"100005",pw:"Rucha",name:"Rucha",area:"All",cat:"—",om:"—"},
+              {cpf:"100005",pw:"admin123",name:"Rucha",area:"All",cat:"—",om:"—"},
             ]},
             { label:"Ops Managers — manage their allocated areas", color:"#E65100", users:[
-              {cpf:"100002",pw:"ops123",name:"Rajiv Sharma",area:"Operations",cat:"—",om:"—"},
-              {cpf:"100018",pw:"gpops",name:"Sanjay Gupta",area:"GP-03/06/15/16/36/61/81",cat:"—",om:"—"},
-              {cpf:"100019",pw:"relops",name:"Ravi Agarwal",area:"REL/RCC/HSE/Contracts",cat:"—",om:"—"},
-              {cpf:"100027",pw:"assetops",name:"Vikas Sharma",area:"GP-03/06 (Ahmedabad)",cat:"—",om:"—"},
-              {cpf:"100050",pw:"ankops",name:"Anil Kapoor",area:"GP-61/81 (Ankleshwar)",cat:"—",om:"—"},
-              {cpf:"100051",pw:"mehops",name:"Sunil Dutt",area:"GP-15/16 (Mehsana)",cat:"—",om:"—"},
-              {cpf:"100052",pw:"rajops",name:"Rajendra Singh",area:"GP-36 (Rajasthan)",cat:"—",om:"—"},
+              {cpf:"100002",pw:"admin123",name:"Rajiv Sharma",area:"Operations",cat:"—",om:"—"},
+              {cpf:"100018",pw:"admin123",name:"Sanjay Gupta",area:"GP-03/06/15/16/36/61/81",cat:"—",om:"—"},
+              {cpf:"100019",pw:"admin123",name:"Ravi Agarwal",area:"REL/RCC/HSE/Contracts",cat:"—",om:"—"},
+              {cpf:"100027",pw:"admin123",name:"Vikas Sharma",area:"GP-03/06 (Ahmedabad)",cat:"—",om:"—"},
+              {cpf:"100050",pw:"admin123",name:"Anil Kapoor",area:"GP-61/81 (Ankleshwar)",cat:"—",om:"—"},
+              {cpf:"100051",pw:"admin123",name:"Sunil Dutt",area:"GP-15/16 (Mehsana)",cat:"—",om:"—"},
+              {cpf:"100052",pw:"admin123",name:"Rajendra Singh",area:"GP-36 (Rajasthan)",cat:"—",om:"—"},
             ]},
             { label:"Data Creators — under Sanjay Gupta (GP Sections)", color:"#1B5E20", users:[
-              {cpf:"100003",pw:"user123",name:"Mahavir Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100006",pw:"gp0303",name:"Anil Verma",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100030",pw:"gp3603",name:"Amit Kumar",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100007",pw:"gp0606",name:"Vikram Singh",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
-              {cpf:"100008",pw:"gp1515",name:"Rakesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
-              {cpf:"100009",pw:"gp1616",name:"Suresh Nair",area:"GP-16",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Valod"},
-              {cpf:"100010",pw:"gp6161",name:"Meena Joshi",area:"GP-61",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Ankleshwar"},
-              {cpf:"100011",pw:"gp8181",name:"Deepak Yadav",area:"GP-81",cat:"Well Data",om:"Sanjay Gupta",loc:"Cambay"},
-              {cpf:"100031",pw:"gp0306",name:"Sunita Devi",area:"GP-03",cat:"Well Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100032",pw:"gpgp15",name:"Rajesh Verma",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
+              {cpf:"100003",pw:"admin123",name:"Mahavir Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
+              {cpf:"100006",pw:"admin123",name:"Anil Verma",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
+              {cpf:"100030",pw:"admin123",name:"Amit Kumar",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
+              {cpf:"100007",pw:"admin123",name:"Vikram Singh",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
+              {cpf:"100008",pw:"admin123",name:"Rakesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
+              {cpf:"100009",pw:"admin123",name:"Suresh Nair",area:"GP-16",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Valod"},
+              {cpf:"100010",pw:"admin123",name:"Meena Joshi",area:"GP-61",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Ankleshwar"},
+              {cpf:"100011",pw:"admin123",name:"Deepak Yadav",area:"GP-81",cat:"Well Data",om:"Sanjay Gupta",loc:"Cambay"},
+              {cpf:"100031",pw:"admin123",name:"Sunita Devi",area:"GP-03",cat:"Well Data",om:"Sanjay Gupta",loc:"Jambusar"},
+              {cpf:"100032",pw:"admin123",name:"Rajesh Verma",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
             ]},
             { label:"Data Creators — under Ravi Agarwal (Support Services)", color:"#1B5E20", users:[
-              {cpf:"100012",pw:"relrel",name:"Pooja Sharma",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100033",pw:"relrel2",name:"Neelam Joshi",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100013",pw:"rccrcc",name:"Manoj Tiwari",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100034",pw:"rccrcc2",name:"Vijay Patil",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100014",pw:"hsehse",name:"Sunil Kumar",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100035",pw:"hsehse2",name:"Anita Sharma",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Ankleshwar"},
-              {cpf:"100015",pw:"concon",name:"Arjun Mehta",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Ahmedabad"},
-              {cpf:"100036",pw:"concon2",name:"Rohit Singh",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100012",pw:"admin123",name:"Pooja Sharma",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100033",pw:"admin123",name:"Neelam Joshi",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100013",pw:"admin123",name:"Manoj Tiwari",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100034",pw:"admin123",name:"Vijay Patil",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100014",pw:"admin123",name:"Sunil Kumar",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100035",pw:"admin123",name:"Anita Sharma",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Ankleshwar"},
+              {cpf:"100015",pw:"admin123",name:"Arjun Mehta",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Ahmedabad"},
+              {cpf:"100036",pw:"admin123",name:"Rohit Singh",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Vadodara"},
             ]},
             { label:"Data Creators — under Vikas Sharma (Ahmedabad)", color:"#2E7D32", users:[
-              {cpf:"100023",pw:"ahmedabad",name:"Hemant Desai",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
-              {cpf:"100037",pw:"ahm002",name:"Suresh Rathod",area:"GP-06",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
+              {cpf:"100023",pw:"admin123",name:"Hemant Desai",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
+              {cpf:"100037",pw:"admin123",name:"Suresh Rathod",area:"GP-06",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
             ]},
             { label:"Data Creators — under Anil Kapoor (Ankleshwar)", color:"#2E7D32", users:[
-              {cpf:"100024",pw:"ankleshwar",name:"Prakash Nair",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
-              {cpf:"100038",pw:"ank002",name:"Geeta Reddy",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
+              {cpf:"100024",pw:"admin123",name:"Prakash Nair",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
+              {cpf:"100038",pw:"admin123",name:"Geeta Reddy",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
             ]},
             { label:"Data Creators — under Sunil Dutt (Mehsana)", color:"#2E7D32", users:[
-              {cpf:"100025",pw:"mehsana",name:"Dinesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
-              {cpf:"100039",pw:"meh002",name:"Mohan Lal",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
+              {cpf:"100025",pw:"admin123",name:"Dinesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
+              {cpf:"100039",pw:"admin123",name:"Mohan Lal",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
             ]},
             { label:"Data Creators — under Rajendra Singh (Rajasthan)", color:"#2E7D32", users:[
-              {cpf:"100026",pw:"rajasthan",name:"Kamla Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
-              {cpf:"100040",pw:"raj002",name:"Shanti Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Jaisalmer"},
+              {cpf:"100026",pw:"admin123",name:"Kamla Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
+              {cpf:"100040",pw:"admin123",name:"Shanti Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Jaisalmer"},
             ]},
             { label:"Viewers (read-only access)", color:"#1565c0", users:[
-              {cpf:"100004",pw:"view123",name:"Priya Patel",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100020",pw:"vie036",name:"Neha Kapoor",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100021",pw:"vie003",name:"Rahul Bose",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100041",pw:"vie0362",name:"Kavita Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100042",pw:"vie061",name:"Arun Kumar",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
-              {cpf:"100022",pw:"vieree",name:"Karan Mehta",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100043",pw:"viercc",name:"Divya Sharma",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100044",pw:"viehse",name:"Pankaj Jain",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100028",pw:"vieahm",name:"Sanjay Mehta",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
-              {cpf:"100029",pw:"vieank",name:"Rohan Joshi",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
-              {cpf:"100045",pw:"viemeh",name:"Megha Desai",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
-              {cpf:"100046",pw:"vieraj",name:"Ravi Raj",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
+              {cpf:"100004",pw:"admin123",name:"Priya Patel",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
+              {cpf:"100020",pw:"admin123",name:"Neha Kapoor",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
+              {cpf:"100021",pw:"admin123",name:"Rahul Bose",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
+              {cpf:"100041",pw:"admin123",name:"Kavita Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
+              {cpf:"100042",pw:"admin123",name:"Arun Kumar",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
+              {cpf:"100022",pw:"admin123",name:"Karan Mehta",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100043",pw:"admin123",name:"Divya Sharma",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100044",pw:"admin123",name:"Pankaj Jain",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
+              {cpf:"100028",pw:"admin123",name:"Sanjay Mehta",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
+              {cpf:"100029",pw:"admin123",name:"Rohan Joshi",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
+              {cpf:"100045",pw:"admin123",name:"Megha Desai",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
+              {cpf:"100046",pw:"admin123",name:"Ravi Raj",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
             ]},
           ].map(group => (
             <div key={group.label} style={{ marginBottom:12 }}>
@@ -484,7 +498,7 @@ function AdminDashboard() {
     api.getStats().then(setStats).catch(()=>setStats({ total:0, pending:0, approved:0, rejected:0, bySection:{}, byType:{}, byClassification:{}, recentActivity:[] })).finally(()=>setLoading(false));
   }, []);
   if (loading) return <Spinner />;
-  const recentActivity = (stats.recentActivity || []).map(f => ({ ...f, fileName: f.fileName || f.file_name, uploadDate: f.uploadDate || (f.upload_date ? f.upload_date.split("T")[0] : ""), uploadedByName: f.uploadedByName || f.uploaded_by }));
+  const recentActivity = (stats.recentActivity || []).map(f => normalizeFile(f));
   return (
     <div>
       <div style={S.sectionTitle}>Admin Dashboard</div>
@@ -510,7 +524,14 @@ function AdminDashboard() {
               <tr key={f.id}>
                 <td style={S.td}><span style={{ color:"#0b3d91", fontWeight:600 }}>{f.fileName}</span></td>
                 <td style={S.td}>{f.section}</td><td style={S.td}>{f.category}</td>
-                <td style={S.td}>{f.uploadedByName}</td><td style={S.td}>{f.uploadDate}</td>
+                <td style={S.td} title={
+                  [f.uploadedByName,
+                    f.uploadedByDesignation ? `Designation: ${f.uploadedByDesignation}` : null,
+                    f.uploadedBySection ? `Section: ${f.uploadedBySection}` : null,
+                    f.uploadedByArea ? `Area: ${f.uploadedByArea}` : null,
+                    f.uploadedByCpf ? `CPF: ${f.uploadedByCpf}` : null,
+                  ].filter(Boolean).join(" | ")
+                }>{f.uploadedByName}</td><td style={S.td}>{f.uploadDate}</td>
                 <td style={S.td}><span style={{ ...S.badge(statusColor[f.status], statusBg[f.status]) }}>{f.status}</span></td>
               </tr>
             ))}</tbody>
@@ -552,7 +573,14 @@ function OpsDashboard() {
               <tr key={f.id}>
                 <td style={S.td}>{f.fileName}</td><td style={S.td}>{f.section}</td><td style={S.td}>{f.category}</td>
                 <td style={S.td}><span style={{ ...S.badge(classColor[f.classification],"#fff"), border:`1px solid ${classColor[f.classification]}` }}>{f.classification}</span></td>
-                <td style={S.td}>{f.uploadedByName}</td><td style={S.td}>{f.uploadDate}</td>
+                <td style={S.td} title={
+                  [f.uploadedByName,
+                    f.uploadedByDesignation ? `Designation: ${f.uploadedByDesignation}` : null,
+                    f.uploadedBySection ? `Section: ${f.uploadedBySection}` : null,
+                    f.uploadedByArea ? `Area: ${f.uploadedByArea}` : null,
+                    f.uploadedByCpf ? `CPF: ${f.uploadedByCpf}` : null,
+                  ].filter(Boolean).join(" | ")
+                }>{f.uploadedByName}</td><td style={S.td}>{f.uploadDate}</td>
               </tr>
             ))}</tbody>
           </table>
@@ -963,9 +991,15 @@ function FileRecords({ user, statusFilter, onToast, onRefresh }) {
         <div style={{ ...S.card, border:"2px solid #0b3d91" }}>
           <div style={{ fontSize:16, fontWeight:700, color:"#0b3d91", marginBottom:12, paddingBottom:8, borderBottom:"1px solid #f0f0f0" }}>File Details: {selected.fileName}</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
-            {[["File Type",selected.fileType],["Project",selected.projectName],["SIG Number",selected.sigNumber||"N/A"],["Data Type",selected.dataType],["Section",selected.section],["Category",selected.category],["Field Season",selected.season],["Block",selected.block],["ML/PML/OLAP",selected.mlBlock||"N/A"],["Location",selected.location],["Classification",selected.classification],["Status",selected.status],["Uploaded By",selected.uploadedByName],["Upload Date",selected.uploadDate],["File Size",selected.fileSize]].map(([k,v])=>(
+            {[["File Type",selected.fileType],["Project",selected.projectName],["SIG Number",selected.sigNumber||"N/A"],["Data Type",selected.dataType],["Section",selected.section],["Category",selected.category],["Field Season",selected.season],["Block",selected.block],["ML/PML/OLAP",selected.mlBlock||"N/A"],["Location",selected.location],["Classification",selected.classification],["Status",selected.status],["Uploaded By",selected.uploadedByName],["Designation",selected.uploadedByDesignation||"N/A"],["Uploader Section",selected.uploadedBySection||"N/A"],["Uploader Area",selected.uploadedByArea||"N/A"],["Uploader Category",selected.uploadedByCategory||"N/A"],["Uploader CPF",selected.uploadedByCpf||"N/A"],["Upload Date",selected.uploadDate],["File Size",selected.fileSize]].map(([k,v])=>(
               <div key={k} style={{ background:"#f8f9fa", borderRadius:6, padding:"8px 12px" }}>
                 <div style={{ fontSize:11, color:"#6c757d", fontWeight:600 }}>{k}</div>
+                <div style={{ fontSize:13, fontWeight:600, color:"#1a1a2e" }}>{v}</div>
+              </div>
+            ))}
+            {selected.dynamicFields && Object.keys(selected.dynamicFields).length > 0 && Object.entries(selected.dynamicFields).map(([k,v]) => (
+              <div key={k} style={{ background:"#fff3e0", borderRadius:6, padding:"8px 12px" }}>
+                <div style={{ fontSize:11, color:"#e65100", fontWeight:600 }}>{k}</div>
                 <div style={{ fontSize:13, fontWeight:600, color:"#1a1a2e" }}>{v}</div>
               </div>
             ))}
@@ -1482,74 +1516,175 @@ function UserManagement({ onToast }) {
 }
 
 function Settings({ user }) {
-  const [lookups, setLookups] = useState({});
-  const [activeTab, setActiveTab] = useState("section");
-  const [newValue, setNewValue] = useState("");
-  const [pageCatTab, setPageCatTab] = useState("progress-report");
-  const [pageCatNew, setPageCatNew] = useState("");
-  const [pageCatLookups, setPageCatLookups] = useState({});
+  const [pages, setPages] = useState([]);
+  const [selPage, setSelPage] = useState("");
+  const [types, setTypes] = useState([]);
+  const [selType, setSelType] = useState("");
+  const [items, setItems] = useState([]);
+  const [newVal, setNewVal] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState("");
 
-  const PAGE_CATEGORIES = [
-    ["progress-report","Progress Report"],["manpower-status","Manpower Status"],
-    ["contract-status","Contract Status"],["fund-management","Fund Management"],
-    ["Operations","Operations"],["Data Processing","Data Processing"],
-    ["Regional Electronics Lab","Regional Electronics Lab"],
-    ["Reporting / Appraisals","Reporting / Appraisals"],
-    ["pending-issues","Pending Issues"],["highlights","Highlights"],
-    ["tech-reports","Technical Reports"],["HSE","HSE"],["sharepoint","SharePoint"],
-  ];
-  const PAGE_CAT_MAP = Object.fromEntries(PAGE_CATEGORIES);
-  const pageCatType = (page) => `pagecat_${page.replace(/[^a-z0-9]/gi,"_")}`;
+  // Field management state
+  const [fields, setFields] = useState([]);
+  const [newFieldName, setNewFieldName] = useState("");
+  const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [newFieldType, setNewFieldType] = useState("select");
+  const [editFieldId, setEditFieldId] = useState(null);
+  const [editFieldLabel, setEditFieldLabel] = useState("");
+  const [editFieldType, setEditFieldType] = useState("");
+
+  const [awpItems, setAwpItems] = useState([]);
+  const [awpLoading, setAwpLoading] = useState(false);
+  const [awpForm, setAwpForm] = useState({ activity:"", target:"", achieved:"", progress:"", deadline:"", status:"On Track" });
+  const [awpEditingId, setAwpEditingId] = useState(null);
+  const [awpSaving, setAwpSaving] = useState(false);
+  const [showAwpForm, setShowAwpForm] = useState(false);
+
+  useEffect(() => { loadAwp(); }, []);
+
+  const loadAwp = async () => {
+    setAwpLoading(true);
+    const d = await api.listAWPItems().catch(() => []);
+    setAwpItems(d || []);
+    setAwpLoading(false);
+  };
 
   useEffect(() => {
-    const types = ["section","category","season","block","file_type","data_type","classification"];
-    types.forEach(t => {
-      api.getLookups(t).then(d => setLookups(p => ({...p, [t]: d}))).catch(() => {});
-    });
-    PAGE_CATEGORIES.forEach(([page]) => {
-      api.getLookups(pageCatType(page)).then(d => setPageCatLookups(p => ({...p, [page]: d}))).catch(() => {});
-    });
+    api.listLookupPages().then(setPages).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!selPage) { setTypes([]); setSelType(""); setItems([]); setFields([]); return; }
+    api.listLookupTypes(selPage).then(setTypes).catch(() => {});
+    api.listPageFields(selPage).then(setFields).catch(() => {});
+  }, [selPage]);
+
+  useEffect(() => {
+    if (!selPage || !selType) { setItems([]); return; }
+    api.getLookups(selType, selPage).then(setItems).catch(() => {});
+  }, [selPage, selType]);
+
   const handleAdd = async () => {
-    if (!newValue.trim()) return;
+    if (!newVal.trim()) return;
     try {
-      await api.addLookup(activeTab, newValue.trim());
-      setNewValue("");
-      const d = await api.getLookups(activeTab);
-      setLookups(p => ({...p, [activeTab]: d}));
+      await api.addLookup(selType, newVal.trim(), 0, selPage);
+      setNewVal("");
+      setItems(await api.getLookups(selType, selPage));
     } catch(e) { alert(e.message); }
   };
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this option?")) return;
     try {
-      await api.deleteLookup(activeTab, id);
-      const d = await api.getLookups(activeTab);
-      setLookups(p => ({...p, [activeTab]: d}));
+      await api.deleteLookup(selType, id);
+      setItems(await api.getLookups(selType, selPage));
     } catch(e) { alert(e.message); }
   };
 
-  const labels = { section:"Sections", category:"Categories", season:"Seasons", block:"Blocks", file_type:"File Types", data_type:"Data Types", classification:"Classifications" };
-
-  const handlePageCatAdd = async () => {
-    if (!pageCatNew.trim()) return;
+  const handleEdit = async (id) => {
+    if (!editVal.trim()) return;
     try {
-      await api.addLookup(pageCatType(pageCatTab), pageCatNew.trim());
-      setPageCatNew("");
-      const d = await api.getLookups(pageCatType(pageCatTab));
-      setPageCatLookups(p => ({...p, [pageCatTab]: d}));
+      await api.updateLookup(selType, id, { value: editVal.trim() });
+      setEditingId(null);
+      setEditVal("");
+      setItems(await api.getLookups(selType, selPage));
     } catch(e) { alert(e.message); }
   };
 
-  const handlePageCatDelete = async (id) => {
-    if (!confirm("Delete this category?")) return;
+  // Field management handlers
+  const handleAddField = async () => {
+    if (!newFieldName.trim() || !newFieldLabel.trim()) return;
     try {
-      await api.deleteLookup(pageCatType(pageCatTab), id);
-      const d = await api.getLookups(pageCatType(pageCatTab));
-      setPageCatLookups(p => ({...p, [pageCatTab]: d}));
+      await api.addPageField(selPage, newFieldName.trim(), newFieldLabel.trim(), newFieldType);
+      setNewFieldName(""); setNewFieldLabel(""); setNewFieldType("select");
+      setFields(await api.listPageFields(selPage));
+      setTypes(await api.listLookupTypes(selPage));
     } catch(e) { alert(e.message); }
   };
+
+  const handleEditField = async (id) => {
+    if (!editFieldLabel.trim()) return;
+    try {
+      await api.updatePageField(selPage, id, { label: editFieldLabel.trim(), field_type: editFieldType });
+      setEditFieldId(null);
+      setFields(await api.listPageFields(selPage));
+    } catch(e) { alert(e.message); }
+  };
+
+  const handleReorderField = async (id, dir) => {
+    try {
+      await api.reorderPageField(selPage, id, dir);
+      setFields(await api.listPageFields(selPage));
+    } catch(e) { alert(e.message); }
+  };
+
+  const handleDeleteField = async (id) => {
+    if (!confirm("Delete this field and all its options?")) return;
+    try {
+      await api.deletePageField(selPage, id);
+      setFields(await api.listPageFields(selPage));
+      setTypes(await api.listLookupTypes(selPage));
+      if (selType) setItems(await api.getLookups(selType, selPage));
+    } catch(e) { alert(e.message); }
+  };
+
+  const startAwpEdit = (item) => {
+    setAwpEditingId(item.id);
+    let df = {};
+    try { df = item.dynamic_fields ? (typeof item.dynamic_fields === "string" ? JSON.parse(item.dynamic_fields) : item.dynamic_fields) : {}; } catch {}
+    setAwpForm({
+      activity: df.activity || df.Activity || item.activity || "",
+      target: df.target || df.Target || item.target || "",
+      achieved: df.achieved || df.Achieved || item.achieved || "",
+      progress: df.progress || df["Progress %"] || df.Progress || item.progress || "",
+      deadline: df.deadline || df.Deadline || item.deadline ? String(df.deadline || df.Deadline || item.deadline).slice(0,10) : "",
+      status: df.status || df.Status || item.status || "On Track",
+    });
+    setShowAwpForm(true);
+  };
+
+  const resetAwpForm = () => {
+    setAwpForm({ activity:"", target:"", achieved:"", progress:"", deadline:"", status:"On Track" });
+    setAwpEditingId(null);
+    setShowAwpForm(false);
+  };
+
+  const handleAwpSubmit = async () => {
+    if (!awpForm.activity) { alert("Activity required"); return; }
+    setAwpSaving(true);
+    const fd = new FormData();
+    const df = {
+      "Activity": awpForm.activity,
+      "Target": awpForm.target,
+      "Achieved": awpForm.achieved,
+      "Progress %": awpForm.progress,
+      "Deadline": awpForm.deadline,
+      "Status": awpForm.status,
+    };
+    fd.append("dynamic_fields", JSON.stringify(df));
+    Object.entries(awpForm).forEach(([k,v]) => fd.append(k, v));
+    try {
+      if (awpEditingId) {
+        await api.updateAWPItem(awpEditingId, fd);
+      } else {
+        await api.createAWPItem(fd);
+      }
+      resetAwpForm();
+      loadAwp();
+    } catch(e) { alert(e.message); }
+    setAwpSaving(false);
+  };
+
+  const handleAwpDelete = async (id) => {
+    if (!confirm("Delete this AWP item?")) return;
+    try {
+      await api.deleteAWPItem(id);
+      loadAwp();
+    } catch(e) { alert(e.message); }
+  };
+
+  const sel = { padding:"6px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:13, outline:"none", background:"#fff", color:"#333" };
 
   return (
     <div>
@@ -1568,47 +1703,197 @@ function Settings({ user }) {
 
       {user?.role === "admin" && (
         <div style={{ ...S.card, marginTop:4 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:"#0b3d91", marginBottom:8 }}>Dropdown Options Manager</div>
-          <div style={{ display:"flex", gap:4, marginBottom:8, flexWrap:"wrap" }}>
-            {Object.keys(labels).map(t => (
-              <button key={t} style={{ padding:"4px 12px", borderRadius:4, border:"none", cursor:"pointer", fontWeight:600, fontSize:12, background: activeTab===t?"#0b3d91":"#e0e0e0", color: activeTab===t?"#fff":"#333" }} onClick={() => setActiveTab(t)}>{labels[t]}</button>
-            ))}
+          <div style={{ fontSize:14, fontWeight:700, color:"#0b3d91", marginBottom:4 }}>Form Builder</div>
+          <div style={{ fontSize:12, color:"#888", marginBottom:10 }}>Configure what fields appear on each page's upload form and what dropdown options they have.</div>
+          <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center", flexWrap:"wrap" }}>
+            <label style={{ fontSize:13, fontWeight:600, color:"#555" }}>Page:</label>
+            <select style={{ ...sel, minWidth:180 }} value={selPage} onChange={e => { setSelPage(e.target.value); setSelType(""); }}>
+              <option value="">— Select Page —</option>
+              {pages.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
           </div>
-          <div style={{ display:"flex", gap:8, marginBottom:8 }}>
-            <input style={{ ...S.input, marginBottom:0 }} placeholder={`New ${labels[activeTab]?.slice(0,-1) || "value"}...`} value={newValue} onChange={e => setNewValue(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} />
-            <button style={{ ...S.btnSm("primary"), whiteSpace:"nowrap" }} onClick={handleAdd}>Add</button>
-          </div>
-          <div style={{ maxHeight:250, overflowY:"auto" }}>
-            {(lookups[activeTab] || []).map(item => (
-              <div key={item.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 8px", borderBottom:"1px solid #f0f4f8" }}>
-                <span style={{ fontSize:13 }}>{item.value}</span>
-                <button style={{ ...S.btnSm("danger"), padding:"2px 8px", fontSize:11 }} onClick={() => handleDelete(item.id)}>X</button>
+
+          {selPage && (
+            <>
+              {/* ─── FIELDS SECTION ─── */}
+              <div style={{ background:"#f9fafb", borderRadius:6, padding:12, marginBottom:12 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:"#333", marginBottom:8 }}>Upload Form Fields for "{selPage}"</div>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8 }}>
+                  <input style={{ ...S.input, marginBottom:0, fontSize:12, flex:1, minWidth:120 }} value={newFieldName} onChange={e => setNewFieldName(e.target.value)} placeholder="Field key (e.g. department)" />
+                  <input style={{ ...S.input, marginBottom:0, fontSize:12, flex:1, minWidth:120 }} value={newFieldLabel} onChange={e => setNewFieldLabel(e.target.value)} placeholder="Display label (e.g. Department)" />
+                  <select style={{ ...sel, fontSize:12 }} value={newFieldType} onChange={e => setNewFieldType(e.target.value)}>
+                    <option value="select">Dropdown</option>
+                    <option value="text">Text Input</option>
+                  </select>
+                  <button style={{ ...S.btnSm("primary"), whiteSpace:"nowrap", fontSize:11 }} onClick={handleAddField}>+ Add Field</button>
+                </div>
+                {fields.length === 0 ? (
+                  <div style={{ padding:8, textAlign:"center", color:"#999", fontSize:12 }}>No fields configured yet. Add one above.</div>
+                ) : fields.map(f => (
+                  <div key={f.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"5px 8px", borderBottom:"1px solid #eee" }}>
+                    {editFieldId === f.id ? (
+                      <div style={{ display:"flex", gap:6, flex:1 }}>
+                        <input style={{ ...S.input, marginBottom:0, flex:1, fontSize:12 }} value={editFieldLabel} onChange={e => setEditFieldLabel(e.target.value)} />
+                        <select style={{ ...sel, fontSize:12 }} value={editFieldType} onChange={e => setEditFieldType(e.target.value)}>
+                          <option value="select">Dropdown</option><option value="text">Text</option>
+                        </select>
+                        <button style={{ ...S.btnSm("primary"), padding:"2px 10px", fontSize:11 }} onClick={() => handleEditField(f.id)}>Save</button>
+                        <button style={{ ...S.btnSm(), padding:"2px 10px", fontSize:11, background:"#eee", color:"#333" }} onClick={() => setEditFieldId(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontSize:12, flex:1 }}>
+                          <strong>{f.label}</strong>
+                          {f.field_type === "select" ? <span style={{ marginLeft:6, fontSize:10, background:"#e3f2fd", color:"#1565c0", padding:"1px 6px", borderRadius:3 }}>dropdown</span>
+                            : <span style={{ marginLeft:6, fontSize:10, background:"#f3e5f5", color:"#7b1fa2", padding:"1px 6px", borderRadius:3 }}>text</span>}
+                          <span style={{ marginLeft:6, color:"#999", fontSize:11 }}>key: {f.field_name}</span>
+                          {f.sort_order !== undefined && <span style={{ marginLeft:6, color:"#bbb", fontSize:10 }}>#{f.sort_order + 1}</span>}
+                        </div>
+                        <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                          <button style={{ ...S.btnSm(), padding:"2px 6px", fontSize:10, background:"#f0f4f8", color:"#555", border:"none", cursor:"pointer" }}
+                            title="Move up" onClick={() => handleReorderField(f.id, "up")}>↑</button>
+                          <button style={{ ...S.btnSm(), padding:"2px 6px", fontSize:10, background:"#f0f4f8", color:"#555", border:"none", cursor:"pointer" }}
+                            title="Move down" onClick={() => handleReorderField(f.id, "down")}>↓</button>
+                          <button style={{ ...S.btnSm(), padding:"2px 8px", fontSize:11, background:"#e3f2fd", color:"#1565c0", border:"none" }}
+                            onClick={() => { setEditFieldId(f.id); setEditFieldLabel(f.label); setEditFieldType(f.field_type); }}>Edit</button>
+                          {f.field_type === "select" && (
+                            <button style={{ ...S.btnSm(), padding:"2px 8px", fontSize:11, background:"#e8f5e9", color:"#2e7d32", border:"none" }}
+                              onClick={() => { setSelType(f.field_name); }}>Options</button>
+                          )}
+                          <button style={{ ...S.btnSm("danger"), padding:"2px 8px", fontSize:11 }} onClick={() => handleDeleteField(f.id)}>X</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+
+              {/* ─── VALUES SECTION ─── */}
+              {selType && (
+                <div style={{ borderTop:"1px solid #eee", paddingTop:12 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#333", marginBottom:8 }}>
+                    Dropdown Values for "{selType}"
+                    <span style={{ fontWeight:400, color:"#888", marginLeft:8, fontSize:11 }}>on {selPage}</span>
+                  </div>
+                  <div style={{ display:"flex", gap:8, marginBottom:8 }}>
+                    <input style={{ ...S.input, marginBottom:0, fontSize:12 }} placeholder={`New ${selType} value...`} value={newVal} onChange={e => setNewVal(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAdd()} />
+                    <button style={{ ...S.btnSm("primary"), whiteSpace:"nowrap", fontSize:11 }} onClick={handleAdd}>Add</button>
+                  </div>
+                  <div style={{ maxHeight:250, overflowY:"auto", border:"1px solid #f0f4f8", borderRadius:6 }}>
+                    {items.length === 0 ? (
+                      <div style={{ padding:12, textAlign:"center", color:"#999", fontSize:12 }}>No options yet. Add one above.</div>
+                    ) : items.map(item => (
+                      <div key={item.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"5px 8px", borderBottom:"1px solid #f0f4f8" }}>
+                        {editingId === item.id ? (
+                          <div style={{ display:"flex", gap:6, flex:1 }}>
+                            <input style={{ ...S.input, marginBottom:0, flex:1, fontSize:12 }} value={editVal} onChange={e => setEditVal(e.target.value)} onKeyDown={e => e.key === "Enter" && handleEdit(item.id)} autoFocus />
+                            <button style={{ ...S.btnSm("primary"), padding:"2px 10px", fontSize:11 }} onClick={() => handleEdit(item.id)}>Save</button>
+                            <button style={{ ...S.btnSm(), padding:"2px 10px", fontSize:11, background:"#eee", color:"#333" }} onClick={() => { setEditingId(null); setEditVal(""); }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <>
+                            <span style={{ fontSize:12, flex:1 }}>{item.value}</span>
+                            <div style={{ display:"flex", gap:4 }}>
+                              <button style={{ ...S.btnSm(), padding:"2px 8px", fontSize:11, background:"#e3f2fd", color:"#1565c0", border:"none" }}
+                                onClick={() => { setEditingId(item.id); setEditVal(item.value); }}>Edit</button>
+                              <button style={{ ...S.btnSm("danger"), padding:"2px 8px", fontSize:11 }} onClick={() => handleDelete(item.id)}>X</button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {!selPage && (
+            <div style={{ padding:16, textAlign:"center", color:"#999", fontSize:13 }}>
+              Select a page above to configure its form fields and dropdown options.
+            </div>
+          )}
         </div>
       )}
 
+      {/* ─── AWP ITEMS MANAGEMENT ─── */}
       {user?.role === "admin" && (
         <div style={{ ...S.card, marginTop:4 }}>
-          <div style={{ fontSize:14, fontWeight:700, color:"#0b3d91", marginBottom:8 }}>Page Categories Manager</div>
-          <div style={{ fontSize:12, color:"#888", marginBottom:8 }}>Manage per-page category options. Each page/section can have its own category list.</div>
-          <div style={{ display:"flex", gap:4, marginBottom:8, flexWrap:"wrap" }}>
-            {PAGE_CATEGORIES.map(([page, label]) => (
-              <button key={page} style={{ padding:"4px 12px", borderRadius:4, border:"none", cursor:"pointer", fontWeight:600, fontSize:11, background: pageCatTab===page?"#0b3d91":"#e0e0e0", color: pageCatTab===page?"#fff":"#333" }} onClick={() => setPageCatTab(page)}>{label}</button>
-            ))}
+          <div style={{ fontSize:14, fontWeight:700, color:"#0b3d91", marginBottom:4 }}>AWP Items Management</div>
+          <div style={{ fontSize:12, color:"#888", marginBottom:10 }}>Manage Annual Work Plan items — add, edit, or delete items.</div>
+
+          <div style={{display:"flex",gap:6,marginBottom:12}}>
+            <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:showAwpForm?"#888":"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={() => showAwpForm ? resetAwpForm() : setShowAwpForm(true)}>
+              {showAwpForm ? "Close Form" : "+ New AWP Item"}
+            </button>
           </div>
-          <div style={{ display:"flex", gap:8, marginBottom:8 }}>
-            <input style={{ ...S.input, marginBottom:0 }} placeholder={`New category for ${PAGE_CAT_MAP[pageCatTab] || pageCatTab}...`} value={pageCatNew} onChange={e => setPageCatNew(e.target.value)} onKeyDown={e => e.key === "Enter" && handlePageCatAdd()} />
-            <button style={{ ...S.btnSm("primary"), whiteSpace:"nowrap" }} onClick={handlePageCatAdd}>Add</button>
-          </div>
-          <div style={{ maxHeight:250, overflowY:"auto" }}>
-            {(pageCatLookups[pageCatTab] || []).map(item => (
-              <div key={item.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 8px", borderBottom:"1px solid #f0f4f8" }}>
-                <span style={{ fontSize:13 }}>{item.value}</span>
-                <button style={{ ...S.btnSm("danger"), padding:"2px 8px", fontSize:11 }} onClick={() => handlePageCatDelete(item.id)}>X</button>
+
+          {showAwpForm && (
+            <div style={{background:"#f9fafb",borderRadius:6,padding:16,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#333",marginBottom:8}}>{awpEditingId ? "Edit AWP Item" : "New AWP Item"}</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Activity *</label><input style={{...S.input,marginBottom:0}} value={awpForm.activity} onChange={e=>setAwpForm(p=>({...p,activity:e.target.value}))} /></div>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Target</label><input style={{...S.input,marginBottom:0}} value={awpForm.target} onChange={e=>setAwpForm(p=>({...p,target:e.target.value}))} /></div>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Achieved</label><input style={{...S.input,marginBottom:0}} value={awpForm.achieved} onChange={e=>setAwpForm(p=>({...p,achieved:e.target.value}))} /></div>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Progress %</label><input style={{...S.input,marginBottom:0}} value={awpForm.progress} onChange={e=>setAwpForm(p=>({...p,progress:e.target.value}))} placeholder="e.g. 84.4%" /></div>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Deadline</label><input style={{...S.input,marginBottom:0}} type="date" value={awpForm.deadline} onChange={e=>setAwpForm(p=>({...p,deadline:e.target.value}))} /></div>
+                <div><label style={{fontSize:12,fontWeight:600,color:"#555"}}>Status</label>
+                  <select style={S.select} value={awpForm.status} onChange={e=>setAwpForm(p=>({...p,status:e.target.value}))}>
+                    <option>On Track</option><option>Needs Attention</option><option>Critical</option>
+                  </select>
+                </div>
               </div>
-            ))}
+              <div style={{display:"flex",gap:8,marginTop:12}}>
+                <button style={S.btnSm()} onClick={handleAwpSubmit} disabled={awpSaving}>{awpSaving ? "Saving..." : awpEditingId ? "✏️ Update" : "💾 Create"}</button>
+                <button style={{...S.btnSm("#888")}} onClick={resetAwpForm}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{border:"1px solid #f0f4f8",borderRadius:6,overflowX:"auto"}}>
+            {awpLoading ? (
+              <div style={{padding:16,textAlign:"center",color:"#999",fontSize:13}}>Loading...</div>
+            ) : awpItems.length === 0 ? (
+              <div style={{padding:16,textAlign:"center",color:"#999",fontSize:13}}>No AWP items yet.</div>
+            ) : (
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#f0f4ff"}}>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Activity</th>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Target</th>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Achieved</th>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Progress</th>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Deadline</th>
+                  <th style={{padding:"6px 8px",textAlign:"left",fontWeight:600,fontSize:11,color:"#555"}}>Status</th>
+                  <th style={{padding:"6px 8px",textAlign:"center",fontWeight:600,fontSize:11,color:"#555"}}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {awpItems.map((d,i) => {
+                    let df = {};
+                    try { df = d.dynamic_fields ? (typeof d.dynamic_fields === "string" ? JSON.parse(d.dynamic_fields) : d.dynamic_fields) : {}; } catch {}
+                    const activity = df.activity || df.Activity || d.activity || "";
+                    const target = df.target || df.Target || d.target || "";
+                    const achieved = df.achieved || df.Achieved || d.achieved || "";
+                    const progress = df.progress || df["Progress %"] || df.Progress || d.progress || "";
+                    const deadline = df.deadline || df.Deadline || d.deadline || "";
+                    const status = df.status || df.Status || d.status || "";
+                    return (
+                    <tr key={d.id} style={{background:i%2===0?"#fff":"#f8f9fa",cursor:"pointer"}} onClick={() => startAwpEdit(d)}>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>{activity}</td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>{target || "—"}</td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>{achieved || "—"}</td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>{progress || "—"}</td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>{deadline ? String(deadline).slice(0,10) : "—"}</td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",fontSize:12}}>
+                        <span style={{background:status==="On Track"?"#e8f5e9":status==="Needs Attention"?"#fff3e0":"#ffebee",color:status==="On Track"?"#1B5E20":status==="Needs Attention"?"#E65100":"#e74c3c",padding:"2px 8px",borderRadius:4,fontWeight:600,fontSize:10}}>{status}</span>
+                      </td>
+                      <td style={{padding:"5px 8px",borderBottom:"1px solid #f0f4f8",textAlign:"center"}}>
+                        <button style={{fontSize:11,padding:"2px 8px",border:"none",borderRadius:3,background:"#ffebee",color:"#c62828",cursor:"pointer"}} onClick={e=>{e.stopPropagation();handleAwpDelete(d.id)}}>Del</button>
+                      </td>
+                    </tr>
+                  );})}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
@@ -1617,10 +1902,7 @@ function Settings({ user }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(() => {
-    const stored = sessionStorage.getItem("auth_user");
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState(null);
   const [page, setPage] = useState("Dashboard");
   const [toast, setToast] = useState(null);
   const [refresh, setRefresh] = useState(0);
@@ -1628,6 +1910,14 @@ export default function App() {
   const [notifList, setNotifList] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    const savedUser = sessionStorage.getItem("auth_user");
+    const savedToken = sessionStorage.getItem("auth_token");
+    if (savedUser && savedToken) {
+      try { setUser(JSON.parse(savedUser)); setToken(savedToken); } catch {}
+    }
+  }, []);
 
   const PAGE_LABELS = {};
   MENU.forEach(item => {
@@ -1686,6 +1976,9 @@ export default function App() {
 
   const handleLogin = (u, token) => { setToken(token); setUser(u); sessionStorage.setItem("auth_user", JSON.stringify(u)); setPage("Dashboard"); };
   const handleLogout = () => { setToken(null); setUser(null); sessionStorage.removeItem("auth_user"); sessionStorage.removeItem("auth_token"); setPage("Dashboard"); };
+  setOnUnauthorized(handleLogout);
+
+  const { showWarning: sessionExpiring, countdown: sessionCountdown, extendSession } = useInactivityTracker(user ? handleLogout : null);
 
   const renderDashboard = () => <SmartDashboard key={refresh} user={user} onToast={showToast} />;
 
@@ -1735,7 +2028,6 @@ export default function App() {
       case "highlights": return <Highlights user={user} onToast={showToast} />;
       case "tech-reports": return <TechnicalReports user={user} onToast={showToast} />;
       case "sharepoint": return <SharePointTemp user={user} onToast={showToast} />;
-      case "awp": return <AWP user={user} onToast={showToast} />;
       case "report-builder": return <ReportBuilder user={user} onToast={showToast} />;
       case "requests": return <Requests user={user} onToast={showToast} />;
       case "share-knowledge": return <ShareKnowledge user={user} onToast={showToast} />;
@@ -1795,8 +2087,8 @@ export default function App() {
           <span style={{ fontSize:12, opacity:0.8 }}>({ROLE_LABELS[user.role]})</span>
           <span style={{ fontSize:12, opacity:0.8 }}>Level: {user.level}</span>
           <div style={{ position:"relative", display:"inline-block" }}>
-            <span onClick={() => { fetchNotifs(); setShowNotif(s=>!s); }} style={{ cursor:"pointer", position:"relative", fontSize:18, lineHeight:1, padding:"4px 6px" }}>
-              Notifications{notifCount > 0 && <span style={{ position:"absolute", top:-2, right:-8, background:"#e74c3c", color:"#fff", fontSize:10, fontWeight:700, padding:"1px 5px", borderRadius:8, minWidth:16, textAlign:"center" }}>{notifCount}</span>}
+            <span onClick={() => { fetchNotifs(); setShowNotif(s=>!s); }} style={{ cursor:"pointer", position:"relative", fontSize:16, lineHeight:1, padding:"6px 8px", background: notifCount > 0 ? "rgba(255,255,255,0.2)" : "transparent", borderRadius:6, display:"inline-flex", alignItems:"center", gap:4 }}>
+              🔔{notifCount > 0 && <span style={{ background:"#e74c3c", color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:8, minWidth:18, textAlign:"center" }}>{notifCount}</span>}
             </span>
             {showNotif && <NotificationDropdown
               notifs={notifList}
@@ -1812,7 +2104,21 @@ export default function App() {
 
       <div style={{...S.sidebar, transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)" }}>
         <div style={{ padding:"10px 16px", borderBottom:"1px solid #2f3f4c", fontSize:11, color:"#fff", textTransform:"uppercase", letterSpacing:1 }}>Main Menu</div>
-        {MENU.filter(item => item.roles.includes(user.role) && (!item.levels || item.levels.includes(user.level))).map(item => {
+        {MENU.filter(item => {
+          if (!item.roles.includes(user.role)) return false;
+          if (item.levels && !item.levels.includes(user.level)) return false;
+          // Section-based menu hiding for non-admin/ops_manager roles
+          const role = user.role;
+          if (role === "admin" || role === "ops_manager") return true;
+          const sec = (user.section || "").toUpperCase();
+          const sectionOnly = {
+            "Data Processing (RCC)": "RCC",
+            "Regional Electronics Lab (REL)": "REL",
+          };
+          const required = sectionOnly[item.label];
+          if (required) return sec === required;
+          return true;
+        }).map(item => {
           if (item.submenu) {
             const isExpanded = expanded[item.label];
             return (
@@ -1862,6 +2168,7 @@ export default function App() {
       <div style={{...S.main, marginLeft: sidebarOpen ? 240 : 0, width: sidebarOpen ? "calc(100% - 240px)" : "100%" }}>{renderPage()}</div>
 
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)} />}
+      {sessionExpiring && <SessionTimeoutDialog countdown={sessionCountdown} onExtend={extendSession} />}
     </div>
   );
 }

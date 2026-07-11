@@ -61,6 +61,7 @@ class File(Base):
     search_text = Column(String, nullable=True)
     summary = Column(String, nullable=True)
     embedding = Column(Text, nullable=True)
+    dynamic_fields = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
@@ -120,6 +121,9 @@ class Lookup(Base):
     value = Column(String(200), nullable=False)
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    page = Column(String(50), nullable=True, index=True)
+    label = Column(String(100), nullable=True)
+    field_type = Column(String(20), nullable=True, default="text")
 
 class UserPermission(Base):
     __tablename__ = "user_permissions"
@@ -209,6 +213,7 @@ class Highlight(Base):
     description = Column(Text, nullable=False)
     author = Column(String(100))
     icon = Column(String(10), default="🏆")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -221,6 +226,7 @@ class TechnicalReport(Base):
     category = Column(String(100))
     author = Column(String(100))
     status = Column(String(20), default="Draft")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -284,6 +290,7 @@ class ProgressReport(Base):
     completed = Column(Float, default=0)
     coverage = Column(String(20))
     status = Column(String(50), default="In Progress")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -297,6 +304,7 @@ class ManpowerStatus(Base):
     deployed = Column(Integer, default=0)
     on_leave = Column(Integer, default=0)
     training = Column(Integer, default=0)
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -311,6 +319,7 @@ class ContractStatus(Base):
     award_date = Column(Date)
     completion_date = Column(Date)
     status = Column(String(50), default="Ongoing")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -323,6 +332,7 @@ class FundManagement(Base):
     allocated = Column(Float, default=0)
     spent = Column(Float, default=0)
     remaining = Column(Float, default=0)
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -338,6 +348,7 @@ class DataProcessingItem(Base):
     progress = Column(Integer, default=0)
     status = Column(String(50), default="Processing")
     due_date = Column(Date)
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -351,6 +362,7 @@ class RegionalLabEquipment(Base):
     status = Column(String(50), default="Operational")
     last_calibration = Column(Date)
     next_due = Column(String(50))
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -364,6 +376,7 @@ class ReportingAppraisal(Base):
     submitted = Column(Date)
     by = Column(String(100))
     status = Column(String(50), default="Draft")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -377,6 +390,7 @@ class PendingIssue(Base):
     date = Column(Date)
     edc = Column(Date)
     status = Column(String(50), default="Open")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -390,6 +404,7 @@ class HSEIncident(Base):
     location = Column(String(255))
     description = Column(Text)
     action_taken = Column(Text)
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -398,12 +413,13 @@ class HSEIncident(Base):
 class AWPItem(Base):
     __tablename__ = "awp_items"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    activity = Column(String(255), nullable=False)
+    activity = Column(String(255), nullable=True)
     target = Column(String(100))
     achieved = Column(String(100))
     progress = Column(String(20))
     deadline = Column(Date)
     status = Column(String(50), default="On Track")
+    dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -489,6 +505,11 @@ class AcquisitionTarget(Base):
     total = Column(Float, default=0)
     total_ach = Column(Float, nullable=True)
 
+    approved = Column(Boolean, default=False)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approval_requested = Column(Boolean, default=False)
+    approval_requested_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -507,3 +528,29 @@ class ManpowerEmployee(Base):
     crc = Column(String(20))
     assignment = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContractSummary(Base):
+    __tablename__ = "contract_summaries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    summary_type = Column(String(50), nullable=False)
+    financial_year = Column(String(20), nullable=False)
+    data = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class TargetMonthHistory(Base):
+    __tablename__ = "target_month_histories"
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("acquisition_targets.id"), nullable=False, index=True)
+    month = Column(String(10), nullable=False)
+    field = Column(String(20), nullable=False)
+    old_value = Column(Float, nullable=True)
+    new_value = Column(Float, nullable=True)
+    changed_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    target = relationship("AcquisitionTarget", foreign_keys=[target_id])
+    changer = relationship("User", foreign_keys=[changed_by])

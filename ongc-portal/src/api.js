@@ -3,14 +3,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const BASE = "http://localhost:8000";
 
-let _token = sessionStorage.getItem("auth_token");
+let _token = null;
+let _onUnauthorized = null;
 
+export function setOnUnauthorized(fn) { _onUnauthorized = fn; }
 export function setToken(t) { _token = t; if (t) sessionStorage.setItem("auth_token", t); else sessionStorage.removeItem("auth_token"); }
-export function getToken() { return _token; }
+export function getToken() { return _token || sessionStorage.getItem("auth_token"); }
 
 async function request(method, path, body, isForm = false) {
   const headers = {};
-  if (_token) headers["Authorization"] = `Bearer ${_token}`;
+  const token = _token || sessionStorage.getItem("auth_token");
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   if (!isForm) headers["Content-Type"] = "application/json";
 
   const res = await fetch(`${BASE}${path}`, {
@@ -18,6 +21,12 @@ async function request(method, path, body, isForm = false) {
     headers,
     body: isForm ? body : body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    setToken(null);
+    if (_onUnauthorized) _onUnauthorized();
+    throw new Error("Session expired");
+  }
 
   if (!res.ok) {
     let err;
@@ -290,22 +299,15 @@ export const api = {
 
   // ─── HIGHLIGHTS ───
   listHighlights: () => request("GET", "/api/highlights/"),
-  createHighlight: (title, description, author, icon) => {
-    const params = new URLSearchParams();
-    params.set("title", title);
-    params.set("description", description);
-    if (author) params.set("author", author);
-    if (icon) params.set("icon", icon);
-    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  createHighlight: (formData) => {
+    const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
-    return fetch(`${BASE}/api/highlights/create`, { method: "POST", headers, body: params }).then(r=>r.json());
+    return fetch(`${BASE}/api/highlights/create`, { method: "POST", headers, body: formData }).then(r=>r.json());
   },
-  updateHighlight: (id, data) => {
-    const params = new URLSearchParams();
-    Object.entries(data).forEach(([k,v]) => { if (v) params.set(k, v); });
-    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  updateHighlight: (id, formData) => {
+    const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
-    return fetch(`${BASE}/api/highlights/${id}`, { method: "PUT", headers, body: params }).then(r=>r.json());
+    return fetch(`${BASE}/api/highlights/${id}`, { method: "PUT", headers, body: formData }).then(r=>r.json());
   },
   deleteHighlight: (id) => request("DELETE", `/api/highlights/${id}`),
   excelHighlightPreview: (formData) => {
@@ -331,22 +333,15 @@ export const api = {
 
   // ─── TECHNICAL REPORTS ───
   listTechnicalReports: (category) => request("GET", category ? `/api/technical-reports/?category=${encodeURIComponent(category)}` : "/api/technical-reports/"),
-  createTechnicalReport: (title, category, author, status) => {
-    const params = new URLSearchParams();
-    params.set("title", title);
-    if (category) params.set("category", category);
-    if (author) params.set("author", author);
-    if (status) params.set("status", status);
-    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  createTechnicalReport: (formData) => {
+    const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
-    return fetch(`${BASE}/api/technical-reports/create`, { method: "POST", headers, body: params }).then(r=>r.json());
+    return fetch(`${BASE}/api/technical-reports/create`, { method: "POST", headers, body: formData }).then(r=>r.json());
   },
-  updateTechnicalReport: (id, data) => {
-    const params = new URLSearchParams();
-    Object.entries(data).forEach(([k,v]) => { if (v) params.set(k, v); });
-    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+  updateTechnicalReport: (id, formData) => {
+    const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
-    return fetch(`${BASE}/api/technical-reports/${id}`, { method: "PUT", headers, body: params }).then(r=>r.json());
+    return fetch(`${BASE}/api/technical-reports/${id}`, { method: "PUT", headers, body: formData }).then(r=>r.json());
   },
   deleteTechnicalReport: (id) => request("DELETE", `/api/technical-reports/${id}`),
   excelReportPreview: (formData) => {
@@ -455,12 +450,22 @@ export const api = {
   },
 
   // ─── LOOKUPS (dropdown data from DB) ───
-  getLookups: (type) => request("GET", `/api/lookup/${type}`),
-  addLookup: (type, value, sort_order = 0) =>
-    request("POST", `/api/lookup/${type}`, { value, sort_order }),
+  getLookups: (type, page) => request("GET", `/api/lookup/${type}${page ? `?page=${encodeURIComponent(page)}` : ""}`),
+  addLookup: (type, value, sort_order = 0, page) =>
+    request("POST", `/api/lookup/${type}`, { value, sort_order, page }),
   updateLookup: (type, id, payload) =>
     request("PUT", `/api/lookup/${type}/${id}`, payload),
   deleteLookup: (type, id) => request("DELETE", `/api/lookup/${type}/${id}`),
+  listLookupPages: () => request("GET", "/api/lookup/pages"),
+  listLookupTypes: (page) => request("GET", `/api/lookup/types?page=${encodeURIComponent(page)}`),
+  listPageFields: (page) => request("GET", `/api/lookup/${encodeURIComponent(page)}/fields`),
+  addPageField: (page, field_name, label, field_type) =>
+    request("POST", `/api/lookup/${encodeURIComponent(page)}/fields`, { field_name, label, field_type }),
+  updatePageField: (page, field_id, payload) =>
+    request("PUT", `/api/lookup/${encodeURIComponent(page)}/fields/${field_id}`, payload),
+  deletePageField: (page, field_id) => request("DELETE", `/api/lookup/${encodeURIComponent(page)}/fields/${field_id}`),
+  reorderPageField: (page, field_id, direction) =>
+    request("PUT", `/api/lookup/${encodeURIComponent(page)}/fields/${field_id}/reorder?direction=${direction}`),
 
   // ─── PROGRESS REPORTS ───
   listProgressReports: () => request("GET", "/api/progress-reports/"),
@@ -764,6 +769,19 @@ export const api = {
     return fetch(`${BASE}/api/knowledge/${itemId}/reject`, { method: "POST", headers, body: params }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
   },
 
+  // ─── CONTRACT SUMMARY (Budget Utilization / Acquisition Cost) ───
+  listContractSummaries: (summaryType, financialYear) => {
+    const p = new URLSearchParams();
+    if (summaryType) p.set("summary_type", summaryType);
+    if (financialYear) p.set("financial_year", financialYear);
+    return request("GET", `/api/contract-summary/?${p.toString()}`);
+  },
+  createContractSummary: (summaryType, financialYear, data) =>
+    request("POST", `/api/contract-summary/?summary_type=${encodeURIComponent(summaryType)}&financial_year=${encodeURIComponent(financialYear)}&data=${encodeURIComponent(JSON.stringify(data))}`),
+  updateContractSummary: (id, data) =>
+    request("PUT", `/api/contract-summary/${id}?data=${encodeURIComponent(JSON.stringify(data))}`),
+  deleteContractSummary: (id) => request("DELETE", `/api/contract-summary/${id}`),
+
   // ─── STAGE-II DATAVISION ───
   stage2Monthly: (fy, project_name) => {
     const p = [];
@@ -787,13 +805,27 @@ export const api = {
   stage2CreateTarget: (data) => request("POST", "/api/stage2/acquisition-targets", data),
   stage2UpdateTarget: (id, data) => request("PUT", `/api/stage2/acquisition-targets/${id}`, data),
   stage2DeleteTarget: (id) => request("DELETE", `/api/stage2/acquisition-targets/${id}`),
-  stage2Export: (project_name, financial_year, type) => {
+  stage2ApproveTarget: (id) => request("POST", `/api/stage2/acquisition-targets/${id}/approve`),
+  stage2UnlockTarget: (id, password) => request("POST", `/api/stage2/acquisition-targets/${id}/unlock`, { password }),
+  stage2RequestApproval: (id) => request("POST", `/api/stage2/acquisition-targets/${id}/request-approval`),
+  stage2CancelApprovalRequest: (id) => request("POST", `/api/stage2/acquisition-targets/${id}/cancel-request`),
+  stage2History: (id) => request("GET", `/api/stage2/acquisition-targets/${id}/history`),
+  stage2HistorySummary: (fy, month, project_name) => {
     const p = [];
+    if (fy) p.push(`financial_year=${encodeURIComponent(fy)}`);
+    if (month) p.push(`month=${encodeURIComponent(month)}`);
     if (project_name) p.push(`project_name=${encodeURIComponent(project_name)}`);
-    if (financial_year) p.push(`financial_year=${encodeURIComponent(financial_year)}`);
-    if (type) p.push(`type=${encodeURIComponent(type)}`);
+    return request("GET", `/api/stage2/acquisition-targets/history/summary${p.length ? `?${p.join("&")}` : ""}`);
+  },
+  stage2FinancialYears: () => request("GET", "/api/stage2/acquisition-targets/financial-years"),
+  stage2Export: (opts) => {
+    const p = [];
+    if (opts?.project_name) p.push(`project_name=${encodeURIComponent(opts.project_name)}`);
+    if (opts?.financial_year) p.push(`financial_year=${encodeURIComponent(opts.financial_year)}`);
+    if (opts?.type) p.push(`type=${encodeURIComponent(opts.type)}`);
     return fetch(`${BASE}/api/stage2/acquisition-targets/export${p.length ? `?${p.join("&")}` : ""}`, {
       headers: _token ? { Authorization: `Bearer ${_token}` } : {},
+      signal: opts?.signal,
     });
   },
   stage2ManpowerSummary: () => request("GET", "/api/stage2/manpower-employees/summary"),

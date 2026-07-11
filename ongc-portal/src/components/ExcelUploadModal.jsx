@@ -1,55 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "../api";
 
-const FIELD_OPTIONS = {
-  target: [
-    { value: "title", label: "Title" },
-    { value: "target_value", label: "Target Value" },
-    { value: "unit", label: "Unit" },
-    { value: "section", label: "Section" },
-    { value: "fiscal_year", label: "Fiscal Year" },
-    { value: "description", label: "Description" },
-  ],
-  highlight: [
-    { value: "title", label: "Title" },
-    { value: "description", label: "Description" },
-    { value: "author", label: "Author" },
-    { value: "icon", label: "Icon" },
-  ],
-  report: [
-    { value: "title", label: "Title" },
-    { value: "category", label: "Category" },
-    { value: "author", label: "Author" },
-    { value: "status", label: "Status" },
-  ],
-  project: [
-    { value: "project_name", label: "Project Name" },
-    { value: "number", label: "SIG No." },
-    { value: "survey_type", label: "Survey Type" },
-    { value: "contractor_name", label: "Contractor / Agency" },
-    { value: "area_name", label: "Area Name" },
-    { value: "section", label: "Section" },
-    { value: "gp_code", label: "GP Code" },
-    { value: "year_field_season", label: "Field Season" },
-    { value: "target_vs_achievement", label: "Volume" },
-    { value: "project_highlights", label: "Remarks" },
-    { value: "location", label: "Location" },
-    { value: "category", label: "Category" },
-    { value: "party_chief", label: "Party Chief" },
-    { value: "start_date", label: "Start Date" },
-    { value: "end_date", label: "End Date" },
-    { value: "status", label: "Status" },
-  ],
-};
-
-export default function ExcelUploadModal({ show, onClose, onToast, apiPreview, apiImport, fields, onSuccess }) {
+export default function ExcelUploadModal({ show, onClose, onToast, apiPreview, apiImport, fields, onSuccess, page }) {
   const [excelFile, setExcelFile] = useState(null);
   const [excelPreview, setExcelPreview] = useState(null);
   const [excelMapping, setExcelMapping] = useState({});
   const [excelLoading, setExcelLoading] = useState(false);
+  const [fieldOpts, setFieldOpts] = useState([]);
 
-  if (!show) return null;
-
-  const fieldOpts = FIELD_OPTIONS[fields] || FIELD_OPTIONS.project;
+  useEffect(() => {
+    if (!show) return;
+    if (page) {
+      api.listPageFields(page).then(f => {
+        setFieldOpts(f.map(x => ({ value: x.field_name, label: x.label })));
+      }).catch(() => setFieldOpts([]));
+    } else {
+      setFieldOpts([]);
+    }
+  }, [show, page]);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}
@@ -85,6 +53,10 @@ export default function ExcelUploadModal({ show, onClose, onToast, apiPreview, a
               setExcelLoading(false);
             }} />
             {excelLoading && <div style={{textAlign:"center",padding:20,color:"#999"}}>Reading Excel file...</div>}
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+              <button onClick={() => { onClose(); setExcelPreview(null); setExcelFile(null); }}
+                style={{padding:"8px 16px",border:"1px solid #ddd",borderRadius:4,background:"#fff",cursor:"pointer",fontSize:13}}>Cancel</button>
+            </div>
           </div>
         ) : (
           <div>

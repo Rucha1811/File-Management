@@ -1,19 +1,33 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../api";
 
-const DOC_TYPES = ["Report","Data Set","Invoice","Contract","Technical Document","Administrative","Other"];
-const CLASSIFICATION_OPTS = ["General / Available for All","Sensitive / Internal Use","Confidential","Highly Confidential / Restricted"];
-
-export function MiniUpload({ user, fields, section, onUpload, onToast }) {
+export function MiniUpload({ user, section, page, onUpload, onToast }) {
   const [file, setFile] = useState(null);
   const [vals, setVals] = useState({});
   const [docType, setDocType] = useState("");
   const [classification, setClassification] = useState("");
   const [description, setDescription] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [fields, setFields] = useState([]);
+  const [options, setOptions] = useState({});
   const toast = (m,t) => { if (onToast) onToast(m,t); else alert(m); };
   const canUpload = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
   if (!canUpload) return null;
+
+  const pageName = page || section;
+
+  useEffect(() => {
+    if (!pageName) return;
+    api.listPageFields(pageName).then(f => {
+      setFields(f);
+      const sel = f.filter(x => x.field_type === "select").map(x => x.field_name);
+      if (sel.length) {
+        Promise.all(sel.map(t => api.getLookups(t, pageName).then(d => [t, d]).catch(() => [t, []]))).then(entries => {
+          setOptions(Object.fromEntries(entries));
+        });
+      }
+    }).catch(() => {});
+  }, [pageName]);
 
   const handle = async () => {
     if (!file) { toast("Select a file", "error"); return; }
@@ -27,9 +41,11 @@ export function MiniUpload({ user, fields, section, onUpload, onToast }) {
       fd.append("classification", classification || "General / Available for All");
       fd.append("doc_type", docType);
       fd.append("description", description);
-      for (const k of Object.keys(fields)) {
-        if (vals[k]) fd.append(k, vals[k]);
+      const dynFields = {};
+      for (const f of fields) {
+        if (vals[f.field_name]) dynFields[f.field_name] = vals[f.field_name];
       }
+      fd.append("dynamic_fields", JSON.stringify(dynFields));
       await api.uploadFile(fd);
       toast("Uploaded successfully", "success");
       setFile(null);
@@ -58,20 +74,36 @@ export function MiniUpload({ user, fields, section, onUpload, onToast }) {
           <label style={{fontSize:14,fontWeight:600,color:"#555"}}>Document Type</label>
           <select style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:4,fontSize:15,background:"#fff"}} value={docType} onChange={e=>setDocType(e.target.value)}>
             <option value="">— Select —</option>
-            {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            <option value="Report">Report</option>
+            <option value="Data Set">Data Set</option>
+            <option value="Invoice">Invoice</option>
+            <option value="Contract">Contract</option>
+            <option value="Technical Document">Technical Document</option>
+            <option value="Administrative">Administrative</option>
+            <option value="Other">Other</option>
           </select>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:2,minWidth:120}}>
           <label style={{fontSize:14,fontWeight:600,color:"#555"}}>Classification</label>
           <select style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:4,fontSize:15,background:"#fff"}} value={classification} onChange={e=>setClassification(e.target.value)}>
             <option value="">— Select —</option>
-            {CLASSIFICATION_OPTS.map(t => <option key={t} value={t}>{t}</option>)}
+            <option value="General / Available for All">General / Available for All</option>
+            <option value="Sensitive / Internal Use">Sensitive / Internal Use</option>
+            <option value="Confidential">Confidential</option>
+            <option value="Highly Confidential / Restricted">Highly Confidential / Restricted</option>
           </select>
         </div>
-        {Object.entries(fields).map(([key, label]) => (
-          <div key={key} style={{display:"flex",flexDirection:"column",gap:2,minWidth:130}}>
-            <label style={{fontSize:14,fontWeight:600,color:"#555"}}>{label}</label>
-            <input style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:4,fontSize:15}} value={vals[key]||""} onChange={e=>setVals(p=>({...p,[key]:e.target.value}))} />
+        {fields.map(f => (
+          <div key={f.field_name} style={{display:"flex",flexDirection:"column",gap:2,minWidth:130}}>
+            <label style={{fontSize:14,fontWeight:600,color:"#555"}}>{f.label}</label>
+            {f.field_type === "select" ? (
+              <select style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:4,fontSize:15,background:"#fff"}} value={vals[f.field_name]||""} onChange={e=>setVals(p=>({...p,[f.field_name]:e.target.value}))}>
+                <option value="">— Select —</option>
+                {(options[f.field_name]||[]).map(o => <option key={o.id} value={o.value}>{o.value}</option>)}
+              </select>
+            ) : (
+              <input style={{padding:"6px 10px",border:"1px solid #ddd",borderRadius:4,fontSize:15}} value={vals[f.field_name]||""} onChange={e=>setVals(p=>({...p,[f.field_name]:e.target.value}))} />
+            )}
           </div>
         ))}
         <div style={{display:"flex",flexDirection:"column",gap:2,minWidth:"100%"}}>

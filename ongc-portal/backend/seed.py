@@ -3,6 +3,7 @@ Seed script — populates the database with initial roles, users, and sample fil
 Run: python seed.py  (from the backend/ directory, with the DB running)
 """
 import asyncio
+import json
 import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -478,16 +479,24 @@ async def seed():
     await db.commit()
 
     AWP = [
-        {"activity":"2D Seismic Acquisition Cambay Block","target":"500 SKM","achieved":"325 SKM","progress":"65%","deadline":"2025-12-31","status":"On Track","cpf":"100003"},
-        {"activity":"3D Survey Jambusar – Phase II","target":"200 SKM","achieved":"200 SKM","progress":"100%","deadline":"2025-06-30","status":"Completed","cpf":"100003"},
-        {"activity":"VSP Acquisition Mehsana","target":"12 wells","achieved":"8 wells","progress":"67%","deadline":"2025-09-30","status":"On Track","cpf":"100003"},
-        {"activity":"Data Processing – 2D Kutch","target":"500 SKM","achieved":"180 SKM","progress":"36%","deadline":"2025-12-31","status":"At Risk","cpf":"100001"},
+        {"Activity":"2D Seismic Acquisition Cambay Block","Target":"500 SKM","Achieved":"325 SKM","Progress %":"65%","Deadline":"2025-12-31","Status":"On Track","Assigned To":"Rahul Sharma","Remarks":"","cpf":"100003"},
+        {"Activity":"3D Survey Jambusar – Phase II","Target":"200 SKM","Achieved":"200 SKM","Progress %":"100%","Deadline":"2025-06-30","Status":"Completed","Assigned To":"Anita Verma","Remarks":"All lines acquired","cpf":"100003"},
+        {"Activity":"VSP Acquisition Mehsana","Target":"12 wells","Achieved":"8 wells","Progress %":"67%","Deadline":"2025-09-30","Status":"On Track","Assigned To":"Vikram Singh","Remarks":"","cpf":"100003"},
+        {"Activity":"Data Processing – 2D Kutch","Target":"500 SKM","Achieved":"180 SKM","Progress %":"36%","Deadline":"2025-12-31","Status":"At Risk","Assigned To":"Priya Patel","Remarks":"Delays in raw data delivery","cpf":"100001"},
+        {"Activity":"Gravity & Magnetic Survey – Barmer","Target":"300 SKM","Achieved":"300 SKM","Progress %":"100%","Deadline":"2025-05-15","Status":"Completed","Assigned To":"Suresh Reddy","Remarks":"Survey completed ahead of schedule","cpf":"100003"},
+        {"Activity":"Seismic Reprocessing – KG Basin","Target":"4 blocks","Achieved":"2 blocks","Progress %":"50%","Deadline":"2025-11-30","Status":"On Track","Assigned To":"Amit Kumar","Remarks":"","cpf":"100003"},
     ]
     for ad in AWP:
-        r = await db.execute(select(AWPItem).where(AWPItem.activity == ad["activity"]))
+        activity_val = ad.pop("Activity", "")
+        cpf_val = ad.pop("cpf", "")
+        r = await db.execute(select(AWPItem).where(AWPItem.activity == activity_val))
         if r.scalar_one_or_none(): continue
-        u = user_map.get(ad["cpf"])
-        obj = AWPItem(activity=ad["activity"],target=ad["target"],achieved=ad["achieved"],progress=ad["progress"],deadline=date.fromisoformat(ad["deadline"]) if ad.get("deadline") else None,status=ad["status"],created_by=u.id if u else None)
+        u = user_map.get(cpf_val)
+        obj = AWPItem(
+            activity=activity_val,
+            dynamic_fields=json.dumps(ad),
+            created_by=u.id if u else None,
+        )
         db.add(obj)
     await db.commit()
 

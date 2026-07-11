@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
+import { DrillDownModal } from "./shared/DrillDownModal";
 
 const S = {
   page: { padding: 0, maxWidth: "none", margin: 0 },
@@ -14,9 +15,9 @@ const C = {
 
 const COLORS = [C.blue, C.green, C.orange, C.purple, C.teal, C.red, C.dark];
 
-function KpiCard({ label, value, color, sub }) {
+function KpiCard({ label, value, color, sub, onClick }) {
   return (
-    <div style={{ ...S.card, textAlign:"center" }}>
+    <div style={{ ...S.card, textAlign:"center", cursor:onClick?"pointer":"default" }} onClick={() => onClick?.()}>
       <div style={{ fontSize: 24, fontWeight: 800, color: color || "#0b3d91" }}>{value ?? "—"}</div>
       <div style={{ fontSize: 12, color: "#999", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>{label}</div>
       {sub && <div style={{ fontSize: 12, color: "#aaa", marginTop: 1 }}>{sub}</div>}
@@ -24,7 +25,7 @@ function KpiCard({ label, value, color, sub }) {
   );
 }
 
-function PieChart({ data, colors, size = 140 }) {
+function PieChart({ data, colors, size = 140, onClick }) {
   const total = Object.values(data).reduce((a, b) => a + b, 0);
   const entries = Object.entries(data).filter(([, v]) => v > 0);
   if (!entries.length) return <div style={{ color: "#aaa", fontSize: 13, textAlign: "center", padding: 20 }}>No data</div>;
@@ -44,7 +45,7 @@ function PieChart({ data, colors, size = 140 }) {
     <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {segs.map((s, i) => (
-          <path key={i} d={arc(s.start, s.start + s.pct)} fill={s.color} stroke="#fff" strokeWidth={1.5} />
+          <path key={i} d={arc(s.start, s.start + s.pct)} fill={s.color} stroke="#fff" strokeWidth={1.5} style={{cursor:onClick?"pointer":"default"}} onClick={() => onClick?.(s.key)} />
         ))}
         <circle cx={cx} cy={cy} r={r * 0.55} fill="#fff" />
         <text x={cx} y={cy + 1} textAnchor="middle" fontSize={size * 0.12} fontWeight={700} fill="#333">{total}</text>
@@ -52,7 +53,7 @@ function PieChart({ data, colors, size = 140 }) {
       </svg>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {segs.map((s, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor:onClick?"pointer":"default" }} onClick={() => onClick?.(s.key)}>
             <div style={{ width: 10, height: 10, borderRadius: 2, background: s.color, flexShrink: 0 }} />
             <span style={{ color: "#555", fontWeight: 500 }}>{s.key}</span>
             <span style={{ fontWeight: 700, color: "#333" }}>{s.value}</span>
@@ -64,14 +65,14 @@ function PieChart({ data, colors, size = 140 }) {
   );
 }
 
-function HBar({ data, maxOverride, color = C.blue, height = 22 }) {
+function HBar({ data, maxOverride, color = C.blue, height = 22, onClick }) {
   const entries = Object.entries(data);
   const max = maxOverride || Math.max(...Object.values(data), 1);
   if (!entries.length) return <div style={{ color: "#aaa", fontSize: 13, textAlign: "center", padding: 20 }}>No data</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {entries.map(([k, v], i) => (
-        <div key={i}>
+        <div key={i} style={{cursor:onClick?"pointer":"default"}} onClick={() => onClick?.(k)}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 1 }}>
             <span style={{ color: "#555", fontWeight: 500 }}>{k}</span>
             <span style={{ fontWeight: 700, color: "#333" }}>{v}</span>
@@ -99,11 +100,14 @@ export default function AnalyticalDashboard({ user, onToast }) {
   const [users, setUsers] = useState([]);
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [drillDown, setDrillDown] = useState(null);
+  const [berTargets, setBerTargets] = useState([]);
+  const [berSelectedProject, setBerSelectedProject] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      const [a, t, p, r, h, u, n] = await Promise.all([
+      const [a, t, p, r, h, u, n, be] = await Promise.all([
         api.activitySummary(period),
         api.listTargets(),
         api.listProjects(),
@@ -111,6 +115,7 @@ export default function AnalyticalDashboard({ user, onToast }) {
         api.listHighlights(),
         api.listUsers(),
         api.listNotifications(),
+        api.stage2Targets(),
       ]);
       setActivity(a || null);
       setTargets(t || []);
@@ -119,9 +124,11 @@ export default function AnalyticalDashboard({ user, onToast }) {
       setHighlights(h || []);
       setUsers(u || []);
       setNotifs(n || []);
+      setBerTargets(be || []);
     } catch {
       setActivity(null); setTargets([]); setProjects([]);
       setTechReports([]); setHighlights([]); setUsers([]); setNotifs([]);
+      setBerTargets([]);
     } finally {
       setLoading(false);
     }
@@ -206,6 +213,24 @@ export default function AnalyticalDashboard({ user, onToast }) {
   const reportsByStatus = {};
   techReports.forEach(r => { reportsByStatus[r.status || "Draft"] = (reportsByStatus[r.status || "Draft"] || 0) + 1; });
 
+  const berProjectNames = [...new Set(berTargets.map(t => t.project_name).filter(Boolean))].sort();
+  const berFiltered = berSelectedProject ? berTargets.filter(t => t.project_name === berSelectedProject) : berTargets;
+  const BER_MONTHS = ["apr","may","jun","jul","aug","sep","oct","nov","dec","jan","feb","mar"];
+  const BER_LABELS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
+  const combinedMonthly = {};
+  const combinedYearly = { be: { target: 0, achieved: 0 }, re: { target: 0, achieved: 0 } };
+  berFiltered.forEach(rec => {
+    const pfx = rec.type === "BE" ? "be" : "re";
+    BER_MONTHS.forEach((m, i) => {
+      if (!combinedMonthly[i]) combinedMonthly[i] = { label: BER_LABELS[i], be_target: 0, be_achieved: 0, re_target: 0, re_achieved: 0 };
+      combinedMonthly[i][pfx + "_target"] += Number(rec[m] || 0);
+      combinedMonthly[i][pfx + "_achieved"] += Number(rec[m + "_ach"] || 0);
+    });
+    combinedYearly[pfx].target += Number(rec.total || 0);
+    combinedYearly[pfx].achieved += Number(rec.total_ach || 0);
+  });
+  const berEntries = Object.values(combinedMonthly).filter(e => e.be_target > 0 || e.re_target > 0);
+
   return (
     <div style={S.page}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
@@ -221,12 +246,12 @@ export default function AnalyticalDashboard({ user, onToast }) {
       </div>
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(130px, 1fr))", gap:10, marginBottom:20 }}>
-        <KpiCard label="Projects" value={projects.length} color={C.blue} sub={`${ongoingProjects.length} ongoing`} />
-        <KpiCard label="Targets" value={targets.length} color={C.dark} sub={`${totalAchieved}/${totalTargetValue} done`} />
+        <KpiCard label="Projects" value={projects.length} color={C.blue} sub={`${ongoingProjects.length} ongoing`} onClick={()=>setDrillDown({title:"Projects",data:projects.map(p=>({Name:p.project_name||p.name,Status:p.status,Block:p.block,Section:p.section}))})} />
+        <KpiCard label="Targets" value={targets.length} color={C.dark} sub={`${totalAchieved}/${totalTargetValue} done`} onClick={()=>setDrillDown({title:"Targets",data:targets.map(t=>({Title:t.title,Goal:t.target_value,Achieved:t.achieved,Section:t.section}))})} />
         <KpiCard label="Activity (30d)" value={activity?.totalUploads || 0} color={C.purple} sub={`${activity?.totalApprovals || 0} approvals`} />
-        <KpiCard label="Tech Reports" value={techReports.length} color={C.teal} />
-        <KpiCard label="Highlights" value={highlights.length} color={C.orange} />
-        <KpiCard label="Users" value={users.length} color={C.green} />
+        <KpiCard label="Tech Reports" value={techReports.length} color={C.teal} onClick={()=>setDrillDown({title:"Tech Reports",data:techReports.map(r=>({Title:r.title,Category:r.category,Status:r.status}))})} />
+        <KpiCard label="Highlights" value={highlights.length} color={C.orange} onClick={()=>setDrillDown({title:"Highlights",data:highlights.map(h=>({Title:h.title,Description:h.description,Author:h.author}))})} />
+        <KpiCard label="Users" value={users.length} color={C.green} onClick={()=>setDrillDown({title:"Users",data:users.map(u=>({Name:u.username,Role:u.role,Email:u.email}))})} />
         <KpiCard label="Notifications" value={notifs.length} color={C.red} sub={`${unreadNotifs} unread`} />
       </div>
 
@@ -238,7 +263,7 @@ export default function AnalyticalDashboard({ user, onToast }) {
               <span style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{page}</span>
               <span style={{ fontSize: 11, color: "#999", fontWeight: 500 }}>{label}</span>
             </div>
-            <PieChart data={data} colors={colors} size={140} />
+            <PieChart data={data} colors={colors} size={140} onClick={k=>setDrillDown({title:page+" — "+label+": "+k,data:[]})} />
           </div>
         ))}
       </div>
@@ -246,12 +271,82 @@ export default function AnalyticalDashboard({ user, onToast }) {
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, marginBottom:20 }}>
         <div style={S.section}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.blue, marginBottom: 12 }}>Targets Achievement</div>
-          <HBar data={targetBarData} color={[C.blue, C.green, C.orange, C.purple, C.teal, C.dark]} height={22} />
+          <HBar data={targetBarData} color={[C.blue, C.green, C.orange, C.purple, C.teal, C.dark]} height={22} onClick={k=>setDrillDown({title:"Target: "+k,data:targets.filter(t=>t.title===k).map(t=>({Title:t.title,Goal:t.target_value,Achieved:t.achieved,Section:t.section}))})} />
         </div>
         <div style={S.section}>
           <div style={{ fontSize: 14, fontWeight: 700, color: C.blue, marginBottom: 12 }}>Tech Reports by Status</div>
-          <HBar data={reportsByStatus} color={[C.green, C.blue, C.orange, C.purple]} height={22} />
+          <HBar data={reportsByStatus} color={[C.green, C.blue, C.orange, C.purple]} height={22} onClick={k=>setDrillDown({title:"Status: "+k,data:techReports.filter(r=>r.status===k).map(r=>({Title:r.title,Category:r.category,Status:r.status}))})} />
         </div>
+      </div>
+
+      {/* BE & RE Targets & Achievement */}
+      <div style={S.section}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.blue, marginBottom: 12 }}>BE &amp; RE Targets &amp; Achievement</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+          <select style={{ padding:"8px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:14, background:"#fff", minWidth:240 }} value={berSelectedProject} onChange={e => setBerSelectedProject(e.target.value)}>
+            <option value="">— All Projects —</option>
+            {berProjectNames.map(pn => <option key={pn} value={pn}>{pn}</option>)}
+          </select>
+          {berProjectNames.length === 0 && <span style={{ fontSize: 12, color: "#aaa" }}>No BE/RE data found.</span>}
+        </div>
+        {berEntries.length > 0 ? (() => {
+          const renderChart = (type, pfx) => {
+            const bc = type === "BE" ? "#1565c0" : "#c62828";
+            const maxVal = Math.max(...berEntries.map(e => Math.max(Number(e[pfx+"_target"])||0, Number(e[pfx+"_achieved"])||0, 1)), 1);
+            return (
+              <div style={{ flex: 1, minWidth: 280 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:"#555", marginBottom:8 }}>{type} — Monthly Target vs Achievement</div>
+                <div style={{ display:"flex", gap:4, alignItems:"end", minHeight:140 }}>
+                  {berEntries.map(e => {
+                    const tgt = Number(e[pfx+"_target"]||0);
+                    const ach = Number(e[pfx+"_achieved"]||0);
+                    return (
+                      <div key={e.label} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", cursor:"pointer" }} onClick={()=>setDrillDown({title:type+" — "+e.label,data:[{Month:e.label,"Target (SKM)":tgt,"Achieved (SKM)":ach}]})}>
+                        <div style={{ display:"flex", gap:3, alignItems:"end", height:120 }}>
+                          <div title={`Target: ${tgt}`} style={{ width:14, background:bc, borderRadius:"3px 3px 0 0", height:Math.max((tgt/maxVal)*110,1), transition:"height 0.3s" }} />
+                          <div title={`Ach: ${ach}`} style={{ width:14, background:"#4caf50", borderRadius:"3px 3px 0 0", height:Math.max((ach/maxVal)*110,1), transition:"height 0.3s" }} />
+                        </div>
+                        <div style={{ fontSize:8, color:"#888", marginTop:2 }}>{e.label}</div>
+                        <div style={{ fontSize:7, color:bc }}>{tgt}</div>
+                        <div style={{ fontSize:7, color:"#4caf50" }}>{ach}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          };
+          const bt = combinedYearly.be.target, ba = combinedYearly.be.achieved;
+          const rt = combinedYearly.re.target, ra = combinedYearly.re.achieved;
+          return (
+            <div>
+              <div style={{ display:"flex", gap:20, flexWrap:"wrap", marginBottom:16 }}>
+                {renderChart("BE", "be")}
+                {renderChart("RE", "re")}
+              </div>
+              <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
+                <div style={{ background:"#f8faff", borderRadius:8, padding:"12px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.08)", textAlign:"center", flex:1, minWidth:120, cursor:"pointer" }} onClick={()=>setDrillDown({title:"BE Target",data:[{Type:"BE",Target:bt,Achieved:ba}]})}>
+                  <div style={{ fontSize:22, fontWeight:700, color:"#1565c0" }}>{bt.toLocaleString()}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>BE Target</div>
+                </div>
+                <div style={{ background:"#f8faff", borderRadius:8, padding:"12px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.08)", textAlign:"center", flex:1, minWidth:120, cursor:"pointer" }} onClick={()=>setDrillDown({title:"BE Achieved",data:[{Type:"BE",Achieved:ba}]})}>
+                  <div style={{ fontSize:22, fontWeight:700, color:"#4caf50" }}>{ba.toLocaleString()}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>BE Achieved</div>
+                </div>
+                <div style={{ background:"#f8faff", borderRadius:8, padding:"12px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.08)", textAlign:"center", flex:1, minWidth:120, cursor:"pointer" }} onClick={()=>setDrillDown({title:"RE Target",data:[{Type:"RE",Target:rt,Achieved:ra}]})}>
+                  <div style={{ fontSize:22, fontWeight:700, color:"#c62828" }}>{rt.toLocaleString()}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>RE Target</div>
+                </div>
+                <div style={{ background:"#f8faff", borderRadius:8, padding:"12px 18px", boxShadow:"0 1px 4px rgba(0,0,0,0.08)", textAlign:"center", flex:1, minWidth:120, cursor:"pointer" }} onClick={()=>setDrillDown({title:"RE Achieved",data:[{Type:"RE",Achieved:ra}]})}>
+                  <div style={{ fontSize:22, fontWeight:700, color:"#4caf50" }}>{ra.toLocaleString()}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>RE Achieved</div>
+                </div>
+              </div>
+            </div>
+          );
+        })() : (
+          <div style={{ textAlign:"center", padding:16, color:"#aaa", fontSize:12 }}>No BE/RE data available.</div>
+        )}
       </div>
 
       {targets.length > 0 && (
@@ -360,6 +455,7 @@ export default function AnalyticalDashboard({ user, onToast }) {
           </div>
         </div>
       )}
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
     </div>
   );
 }

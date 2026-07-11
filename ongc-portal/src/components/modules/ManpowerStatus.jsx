@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../../api";
+import { DrillDownModal } from "../shared/DrillDownModal";
 
 const S = {
   page: { padding:0, maxWidth:"none", margin:0 },
@@ -35,7 +36,7 @@ function disciplineFromDesig(desig) {
 
 const CHART_COLORS = ["#0b3d91","#2e7d32","#E65100","#6a1b9a","#00838f","#c62828","#558b2f","#283593","#ad1457","#4e342e","#78909c","#f57f17"];
 
-function VerticalBar({ data, label, colorMap }) {
+function VerticalBar({ data, label, colorMap, onClick }) {
   const maxVal = Math.max(...Object.values(data), 1);
   const entries = Object.entries(data).sort(([a],[b]) => {
     if (label === "Level") return sortLevel(a, b);
@@ -52,7 +53,7 @@ function VerticalBar({ data, label, colorMap }) {
           const x = 20 + i * (barW + 8);
           const c = colorMap?.[k] || CHART_COLORS[i % CHART_COLORS.length];
           return (
-            <g key={k}>
+            <g key={k} style={{cursor:onClick?"pointer":"default"}} onClick={() => onClick?.(k)}>
               <rect x={x} y={150 - h} width={barW} height={h} fill={c} rx={3}>
                 <title>{k}: {v}</title>
               </rect>
@@ -66,7 +67,7 @@ function VerticalBar({ data, label, colorMap }) {
   );
 }
 
-function PieChart({ data, label }) {
+function PieChart({ data, label, onClick }) {
   const total = Object.values(data).reduce((s, v) => s + v, 0) || 1;
   const entries = Object.entries(data).sort(([,a],[,b]) => b - a);
   const cx = 100, cy = 100, r = 80;
@@ -91,14 +92,14 @@ function PieChart({ data, label }) {
             const large = s.end - s.start > Math.PI ? 1 : 0;
             const c = CHART_COLORS[i % CHART_COLORS.length];
             if (s.value / total >= 0.001) {
-              return <path key={s.key} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`} fill={c}><title>{s.key}: {s.value} ({s.pct}%)</title></path>;
+              return <path key={s.key} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`} fill={c} style={{cursor:onClick?"pointer":"default"}} onClick={() => onClick?.(s.key)}><title>{s.key}: {s.value} ({s.pct}%)</title></path>;
             }
             return null;
           })}
         </svg>
         <div style={{fontSize:12,lineHeight:1.6}}>
           {shown.map((s, i) => (
-            <div key={s.key} style={{display:"flex",alignItems:"center",gap:6}}>
+            <div key={s.key} style={{display:"flex",alignItems:"center",gap:6, cursor:onClick?"pointer":"default"}} onClick={() => onClick?.(s.key)}>
               <span style={{display:"inline-block",width:10,height:10,borderRadius:2,background:CHART_COLORS[i % CHART_COLORS.length]}} />
               <span style={{fontWeight:600,color:"#333"}}>{s.key}</span>
               <span style={{color:"#888"}}>{s.value} ({s.pct}%)</span>
@@ -116,6 +117,7 @@ export function ManpowerStatus({ user, onToast }) {
   const [loading, setLoading] = useState(true);
   const [showDir, setShowDir] = useState(false);
   const [search, setSearch] = useState("");
+  const [drillDown, setDrillDown] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -156,7 +158,7 @@ export function ManpowerStatus({ user, onToast }) {
       <div style={{...S.title,marginBottom:12}}>Manpower Status — Geophysical Services</div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
-        <div style={{background:"#fff",borderRadius:8,padding:"14px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",textAlign:"center"}}>
+        <div style={{background:"#fff",borderRadius:8,padding:"14px 18px",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",textAlign:"center",cursor:"pointer"}} onClick={()=>setDrillDown({title:"All Employees",data:data.map(e=>({Name:e.name,Designation:e.designation,Section:e.section,Level:e.level,CPF:e.cpf_no}))})}>
           <div style={{fontSize:26,fontWeight:800,color:"#0b3d91"}}>{data.length}</div>
           <div style={{fontSize:11,color:"#888",fontWeight:600,marginTop:2}}>Total Employees</div>
         </div>
@@ -172,15 +174,15 @@ export function ManpowerStatus({ user, onToast }) {
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
         <div style={S.card}>
-          <VerticalBar data={byLevel} label="Level" />
+          <VerticalBar data={byLevel} label="Level" onClick={k=>setDrillDown({title:"Level: "+k,data:data.filter(e=>(e.level||"Unknown")===k).map(e=>({Name:e.name,Designation:e.designation,Section:e.section,CPF:e.cpf_no}))})} />
         </div>
         <div style={S.card}>
-          <VerticalBar data={byDiscipline} label="Discipline" />
+          <VerticalBar data={byDiscipline} label="Discipline" onClick={k=>setDrillDown({title:"Discipline: "+k,data:data.filter(e=>disciplineFromDesig(e.designation)===k).map(e=>({Name:e.name,Designation:e.designation,Section:e.section,Level:e.level}))})} />
         </div>
       </div>
 
       <div style={{...S.card,marginBottom:16}}>
-        <PieChart data={bySection} label="Section" />
+        <PieChart data={bySection} label="Section" onClick={k=>setDrillDown({title:"Section: "+k,data:data.filter(e=>(e.section||"Unknown")===k).map(e=>({Name:e.name,Designation:e.designation,Level:e.level,CPF:e.cpf_no}))})} />
       </div>
 
       <div style={S.card}>
@@ -229,6 +231,7 @@ export function ManpowerStatus({ user, onToast }) {
           </>
         )}
       </div>
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
     </div>
   );
 }

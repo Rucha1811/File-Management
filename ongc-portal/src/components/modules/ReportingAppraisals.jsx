@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../../api";
 import { S, th, td, badge, C0 } from "../shared/styles";
 import { VBarSimple, DonutSimple, COL0 } from "../shared/Charts";
+import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
 
 
@@ -23,6 +24,7 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [form, setForm] = useState({ period:"", submitted:"", by:"", status:"Draft" });
   const [showForm, setShowForm] = useState(false);
+  const [drillDown, setDrillDown] = useState(null);
   const canEdit = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
 
   const addTab = () => {
@@ -60,6 +62,7 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
     if (!form.period) { onToast?.("Period required", "error"); return; }
     const fd = new FormData();
     fd.append("section", active);
+    fd.append("dynamic_fields", JSON.stringify(form));
     Object.entries(form).forEach(([k,v]) => { if (v) fd.append(k, v); });
     await api.createReportingAppraisal(fd).catch(() => { onToast?.("Failed to create", "error"); return; });
     onToast?.("Report record created", "success");
@@ -154,11 +157,11 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
           <>
             <div style={S.section}>
               <div style={S.sectionTitle}>Submission Status</div>
-              <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.blue,C0.purple]} size={120}/>
+              <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.blue,C0.purple]} size={120} onClick={k=>setDrillDown({title:"Status: "+k,data:rows.filter(r=>r.status===k).map(r=>({Period:r.period,Submitted:r.submitted,By:r.by}))})}/>
             </div>
           <div style={S.section}>
             <div style={S.sectionTitle}>Reports by Author</div>
-            <DonutSimple data={byAuthor} colors={COL0} size={120}/>
+            <DonutSimple data={byAuthor} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Author: "+k,data:rows.filter(r=>r.by===k).map(r=>({Period:r.period,Status:r.status,Submitted:r.submitted}))})}/>
           </div>
           </>
         )}
@@ -166,8 +169,8 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
 
       {stats && (
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
-          {[["Total Files",stats.total,C0.blue],["Approved",stats.approved,C0.green],["Pending",stats.pending,C0.orange],["Rejected",stats.rejected,C0.red]].map(([l,v,c])=>(
-            <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+          {[["Total Files",stats.total,C0.blue,null],["Approved",stats.approved,C0.green,f=>f.status==="Approved"],["Pending",stats.pending,C0.orange,f=>f.status==="Pending"],["Rejected",stats.rejected,C0.red,f=>f.status==="Rejected"]].map(([l,v,c,fl])=>(
+            <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:fl?"pointer":"default"}} onClick={()=>fl&&setDrillDown({title:l+" Files",data:rows.filter(fl).map(r=>({Period:r.period,By:r.by,Status:r.status}))})}>
               <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
             <div style={{fontSize:13,color:"#888",fontWeight:600,textTransform:"uppercase",marginTop:2}}>{l}</div>
             </div>
@@ -180,17 +183,17 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
           <>
         <div style={S.section}>
           <div style={S.sectionTitle}>Files by Section</div>
-          <DonutSimple data={stats.bySection||{}} colors={COL0} size={120}/>
+          <DonutSimple data={stats.bySection||{}} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Section: "+k,data:[]})}/>
         </div>
         <div style={S.section}>
           <div style={S.sectionTitle}>Classification Breakdown</div>
-          <DonutSimple data={stats.byClassification||{}} colors={COL0} size={120}/>
+          <DonutSimple data={stats.byClassification||{}} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Classification: "+k,data:[]})}/>
         </div>
           </>
         )}
         <div style={S.section}>
           <div style={S.sectionTitle}>Submission Timeline (Estimated)</div>
-          <VBarSimple data={mockTimeline.reduce((a,m)=>{a[m.month]=m.count;return a;},{})} color={C0.blue} height={150}/>
+          <VBarSimple data={mockTimeline.reduce((a,m)=>{a[m.month]=m.count;return a;},{})} color={C0.blue} height={150} onClick={k=>setDrillDown({title:"Month: "+k,data:rows.filter(r=>r.period && r.period.toLowerCase().includes(k.toLowerCase())).map(r=>({Period:r.period,By:r.by,Status:r.status}))})}/>
         </div>
       </div>
 
@@ -212,6 +215,7 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
         )}
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelAppraisalPreview} apiImport={api.excelAppraisalImport} fields="reporting_appraisal" onSuccess={()=>{load(active)}} />
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
       </> )}
     </div>
   );

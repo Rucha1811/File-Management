@@ -112,6 +112,9 @@ export function ShareKnowledge({ user, onToast }) {
               <th style={th}>Title</th>
               <th style={th}>Category</th>
               <th style={th}>Status</th>
+              <th style={th}>Uploaded By</th>
+              <th style={th}>Designation</th>
+              <th style={th}>Department</th>
               <th style={th}>Description</th>
               <th style={th}>File</th>
               <th style={th}>Ops Comment</th>
@@ -123,6 +126,9 @@ export function ShareKnowledge({ user, onToast }) {
                 <td style={{ ...td, fontWeight: 600 }}>{r.title}</td>
                 <td style={td}>{r.category}</td>
                 <td style={td}>{badge(r.status)}</td>
+                <td style={td}>{r.creator_name || "—"}</td>
+                <td style={td}>{r.creator_designation || "—"}</td>
+                <td style={td}>{r.creator_section || "—"}</td>
                 <td style={{ ...td, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{r.description}</td>
                 <td style={td}>
                   {r.file_name ? (

@@ -38,24 +38,26 @@ async def list_reports(
             q = q.where(TechnicalReport.created_by == current_user.id)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [
-        {
-            "id": r.id,
-            "title": r.title,
-            "category": r.category,
-            "author": r.author or (r.creator.name if r.creator else ""),
-            "status": r.status,
-            "created_by": r.created_by,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-        }
-        for r in items
-    ]
+    out = []
+    for r in items:
+        d = {"id": r.id}
+        if r.dynamic_fields:
+            try:
+                df = json.loads(r.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = r.dynamic_fields
+            except:
+                d["dynamic_fields"] = r.dynamic_fields
+        else:
+            d.update({"title": r.title, "category": r.category, "author": r.author or (r.creator.name if r.creator else ""), "status": r.status, "created_by": r.created_by, "created_at": r.created_at.isoformat() if r.created_at else None, "updated_at": r.updated_at.isoformat() if r.updated_at else None})
+        out.append(d)
+    return out
 
 
 @router.post("/create")
 async def create_report(
-    title: str,
+    dynamic_fields: str = None,
+    title: str = "",
     category: str = None,
     author: str = None,
     status: str = "Draft",
@@ -70,6 +72,7 @@ async def create_report(
     if category and category not in CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category. Must be one of: {', '.join(CATEGORIES)}")
     report = TechnicalReport(
+        dynamic_fields=dynamic_fields,
         title=title,
         category=category or "Project Reports",
         author=author or current_user.name,
@@ -93,6 +96,7 @@ async def create_report(
 @router.put("/{report_id}")
 async def update_report(
     report_id: int,
+    dynamic_fields: str = None,
     title: str = None,
     category: str = None,
     author: str = None,
@@ -117,6 +121,8 @@ async def update_report(
         report.author = author
     if status:
         report.status = status
+    if dynamic_fields is not None:
+        report.dynamic_fields = dynamic_fields
     report.updated_at = datetime.utcnow()
     await db.commit()
     return {"success": True, "report_id": report_id}
@@ -237,7 +243,7 @@ async def report_excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"title","category","author","status"}
+    fixed_fields = {"title","category","author","status"}
     title_header = next((k for k,v in mapping_dict.items() if v=="title"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -247,14 +253,21 @@ async def report_excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    if field_name == "title":
-                        has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                if field_name == "title":
+                    has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         rname = row_data.get("title", f"Imported-{r}")
@@ -266,6 +279,7 @@ async def report_excel_import(
             category=row_data.get("category", "Project Reports"),
             author=row_data.get("author"),
             status=row_data.get("status", "Draft"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(report)

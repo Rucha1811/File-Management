@@ -63,9 +63,9 @@ async def create_request(
     
     if current_user.ops_manager_id:
         db.add(Notification(user_id=current_user.ops_manager_id, message=f'New request from {current_user.name}: "{title}"', is_read=False))
-    admins = await db.execute(select(User.id).where(User.role.has(name="admin")))
-    for a in admins:
-        db.add(Notification(user_id=a[0], message=f'New request from {current_user.name}: "{title}"', is_read=False))
+        await db.commit()
+    else:
+        await db.commit()
     return {"id": req.id, "title": req.title, "status": req.status, "msg": "Request created"}
 
 @router.post("/{request_id}/approve-ops")
@@ -92,10 +92,12 @@ async def approve_ops(
     req.updated_at = datetime.utcnow()
     await db.commit()
     
-    admins = await db.execute(select(User.id).where(User.role.has(name="admin")))
-    for a in admins:
-        db.add(Notification(user_id=a[0], message=f'Request "{req.title}" approved by ops_manager {current_user.name}, needs admin approval', is_read=False))
+    from app.models.base import Role
+    admins = await db.execute(select(User.id).join(Role, User.role_id == Role.id).where(Role.name == "admin"))
+    for a in admins.scalars().all():
+        db.add(Notification(user_id=a, message=f'Request "{req.title}" approved by ops_manager {current_user.name}, needs admin approval', is_read=False))
     db.add(Notification(user_id=req.user_id, message=f'Your request "{req.title}" has been approved by {current_user.name} (Ops Manager). Awaiting admin approval.', is_read=False))
+    await db.commit()
     return {"msg": "Request approved by ops_manager, now pending admin approval", "status": req.status}
 
 @router.post("/{request_id}/approve-admin")
@@ -123,6 +125,7 @@ async def approve_admin(
     db.add(Notification(user_id=req.user_id, message=f'Your request "{req.title}" has been fully approved by admin {current_user.name}!', is_read=False))
     if req.reviewed_by_ops:
         db.add(Notification(user_id=req.reviewed_by_ops, message=f'Request "{req.title}" has been approved by admin {current_user.name}.', is_read=False))
+    await db.commit()
     return {"msg": "Request fully approved", "status": req.status}
 
 @router.post("/{request_id}/reject")
@@ -152,4 +155,5 @@ async def reject_request(
     await db.commit()
     
     db.add(Notification(user_id=req.user_id, message=f'Your request "{req.title}" was rejected by {current_user.name}. Reason: {comment}', is_read=False))
+    await db.commit()
     return {"msg": "Request rejected", "status": req.status}

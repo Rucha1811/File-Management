@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../../api";
 import { S, th, td, badge, C0 } from "../shared/styles";
 import { DonutSimple, COL0 } from "../shared/Charts";
+import { DrillDownModal } from "../shared/DrillDownModal";
 import FileUploadForm from "../FileUploadForm";
 import ExcelUploadModal from "../ExcelUploadModal";
 
@@ -29,9 +30,10 @@ export function Operations({ initialTab, user }) {
   const [showHseForm, setShowHseForm] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [hseForm, setHseForm] = useState({ date:"", incident_type:"", location:"", description:"", action_taken:"" });
-  const [hseStats] = useState({
-    daysWithoutIncident: 185, totalInspections: 24, complianceRate: "97.2%",
-    activeDrills: 3, lastInspection: "2025-06-14", pendingActions: 2,
+  const [drillDown, setDrillDown] = useState(null);
+  const [hseStats, setHseStats] = useState({
+    daysWithoutIncident: 0, totalInspections: 0, complianceRate: "—",
+    activeDrills: 0, lastInspection: "—", pendingActions: 0,
   });
   const canEdit = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
 
@@ -82,7 +84,17 @@ export function Operations({ initialTab, user }) {
   const loadHse = async () => {
     setHseLoading(true);
     const d = await api.listHSEIncidents().catch(() => []);
-    setHseIncidents(d || []);
+    const incidents = d || [];
+    setHseIncidents(incidents);
+    const dates = incidents.map(i => i.date || i.created_at || "").filter(Boolean).sort().reverse();
+    setHseStats({
+      daysWithoutIncident: incidents.length ? Math.floor((Date.now() - new Date(dates[0]||Date.now()).getTime()) / 86400000) : 0,
+      totalInspections: incidents.length,
+      complianceRate: incidents.length ? Math.round((incidents.filter(i => i.status === "Resolved" || !i.status).length / incidents.length) * 100) + "%" : "—",
+      activeDrills: 3,
+      lastInspection: dates[0] ? new Date(dates[0]).toLocaleDateString() : "—",
+      pendingActions: incidents.filter(i => i.status === "Open" || i.status === "Pending").length,
+    });
     setHseLoading(false);
   };
 
@@ -276,8 +288,8 @@ export function Operations({ initialTab, user }) {
           <FileUploadForm user={user} section={active} onUpload={loadFiles} onToast={null} />
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
-        {[["Total Files",files.length,C0.blue],["Approved",byStatus.Approved,C0.green],["Pending",byStatus.Pending,C0.orange],["Rejected",byStatus.Rejected,C0.red]].map(([l,v,c])=>(
-          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        {[["Total Files",files.length,C0.blue,null],["Approved",byStatus.Approved,C0.green,f=>f.status==="Approved"],["Pending",byStatus.Pending,C0.orange,f=>f.status==="Pending"],["Rejected",byStatus.Rejected,C0.red,f=>f.status==="Rejected"]].map(([l,v,c,fl])=>(
+          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:fl?"pointer":"default"}} onClick={()=>fl&&setDrillDown({title:l+" Files",data:files.filter(fl).map(f=>({Name:f.file_name,Type:f.file_type,Status:f.status,Category:f.category}))})}>
             <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
             <div style={{fontSize:13,color:"#888",fontWeight:600,textTransform:"uppercase",marginTop:2}}>{l}</div>
           </div>
@@ -311,10 +323,10 @@ export function Operations({ initialTab, user }) {
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={S.section}><div style={S.sectionTitle}>Files by Category</div><DonutSimple data={byCategory} colors={COL0} size={120}/></div>
-        <div style={S.section}><div style={S.sectionTitle}>Status Distribution</div><DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120}/></div>
-        <div style={S.section}><div style={S.sectionTitle}>Files by Type</div><DonutSimple data={byType} colors={COL0} size={120}/></div>
-        <div style={S.section}><div style={S.sectionTitle}>Classification Breakdown</div><DonutSimple data={byClassification} colors={COL0} size={120}/></div>
+        <div style={S.section}><div style={S.sectionTitle}>Files by Category</div><DonutSimple data={byCategory} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Category: "+k,data:files.filter(f=>(f.category||"Uncategorized")===k).map(f=>({Name:f.file_name,Type:f.file_type,Status:f.status}))})}/></div>
+        <div style={S.section}><div style={S.sectionTitle}>Status Distribution</div><DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120} onClick={k=>setDrillDown({title:"Status: "+k,data:files.filter(f=>f.status===k).map(f=>({Name:f.file_name,Type:f.file_type,Category:f.category}))})}/></div>
+        <div style={S.section}><div style={S.sectionTitle}>Files by Type</div><DonutSimple data={byType} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Type: "+k,data:files.filter(f=>(f.file_type||"Unknown")===k).map(f=>({Name:f.file_name,Status:f.status,Category:f.category}))})}/></div>
+        <div style={S.section}><div style={S.sectionTitle}>Classification Breakdown</div><DonutSimple data={byClassification} colors={COL0} size={120} onClick={k=>setDrillDown({title:"Classification: "+k,data:files.filter(f=>(f.classification||"Unclassified")===k).map(f=>({Name:f.file_name,Type:f.file_type,Status:f.status}))})}/></div>
       </div>
 
       <div style={S.section}>
@@ -413,6 +425,7 @@ export function Operations({ initialTab, user }) {
             </table>
             </div>
           )}
+          {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
         </div>
       </>
       )}

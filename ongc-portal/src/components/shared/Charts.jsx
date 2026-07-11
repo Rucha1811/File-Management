@@ -2,14 +2,14 @@ import { C0 } from "./styles";
 
 export const COL0 = [C0.blue, C0.green, C0.orange, C0.purple, C0.teal, C0.red];
 
-export function HBarSimple({ data, colors, label }) {
+export function HBarSimple({ data, colors, label, onClick }) {
   const entries = Object.entries(data);
   const max = Math.max(...Object.values(data), 1);
   if (!entries.length) return <div style={{color:"#aaa",fontSize:12,textAlign:"center",padding:16}}>No {label} data</div>;
   return (
     <div>
       {entries.map(([k,v],i) => (
-        <div key={i} style={{marginBottom:8}}>
+        <div key={i} style={{marginBottom:8, cursor: onClick ? "pointer" : "default" }} onClick={() => onClick?.(k, v)}>
           <div style={{display:"flex",justifyContent:"space-between",fontSize:14,marginBottom:2}}>
             <span style={{color:"#555",fontWeight:600}}>{k}</span>
             <span style={{color:"#888"}}>{v}</span>
@@ -23,7 +23,7 @@ export function HBarSimple({ data, colors, label }) {
   );
 }
 
-export function VBarSimple({ data, color, height=140 }) {
+export function VBarSimple({ data, color, height=140, onClick }) {
   const entries = Object.entries(data);
   const max = Math.max(...Object.values(data), 1);
   if (!entries.length) return <div style={{color:"#aaa",fontSize:12,textAlign:"center",padding:16}}>No data</div>;
@@ -32,7 +32,7 @@ export function VBarSimple({ data, color, height=140 }) {
       {entries.map(([k,v],i) => {
         const h = Math.max((v/max)*(height-24),4);
         return (
-          <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:50}}>
+          <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",minWidth:50, cursor: onClick ? "pointer" : "default" }} onClick={() => onClick?.(k, v)}>
             <div style={{fontSize:12,fontWeight:700,color:color||C0.blue,marginBottom:2}}>{v}</div>
             <div style={{width:36,height,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
               <div style={{width:"100%",height,background:"#f0f4f8",borderRadius:4,position:"relative",overflow:"hidden"}}>
@@ -47,7 +47,7 @@ export function VBarSimple({ data, color, height=140 }) {
   );
 }
 
-export function DonutSimple({ data, colors, size=120 }) {
+export function DonutSimple({ data, colors, size=120, onClick }) {
   const total = Object.values(data).reduce((a,b)=>a+b,0);
   const entries = Object.entries(data).filter(([,v])=>v>0);
   if (!entries.length) return <div style={{color:"#aaa",fontSize:12,textAlign:"center",padding:16}}>No data</div>;
@@ -62,13 +62,20 @@ export function DonutSimple({ data, colors, size=120 }) {
   return(
     <div style={{display:"flex",alignItems:"center",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {segs.map((s,i)=><path key={i} d={arc(s.start,s.start+s.pct)} fill={s.color} stroke="#fff" strokeWidth={1.5}/>)}
+        {segs.map((s,i)=><path key={i} d={arc(s.start,s.start+s.pct)} fill={s.color} stroke="#fff" strokeWidth={1.5}
+          style={{cursor: onClick?"pointer":"default"}}
+          onClick={() => onClick?.(s.key, s.value)}
+        />)}
         <circle cx={cx} cy={cy} r={r*0.55} fill="#fff"/>
         <text x={cx} y={cy+1} textAnchor="middle" fontSize={size*0.12} fontWeight={700} fill="#333">{total}</text>
         <text x={cx} y={cy+size*0.06} textAnchor="middle" fontSize={size*0.065} fill="#aaa">Total</text>
       </svg>
       <div style={{display:"flex",flexDirection:"column",gap:2}}>
-        {segs.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:14}}><div style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/><span style={{color:"#666"}}>{s.key}</span><span style={{fontWeight:700,color:"#333"}}>{s.value}</span><span style={{color:"#999",fontSize:13}}>({(s.pct*100).toFixed(1)}%)</span></div>)}
+        {segs.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,fontSize:14, cursor: onClick?"pointer":"default"}} onClick={() => onClick?.(s.key, s.value)}>
+          <div style={{width:8,height:8,borderRadius:2,background:s.color,flexShrink:0}}/>
+          <span style={{color:"#666"}}>{s.key}</span><span style={{fontWeight:700,color:"#333"}}>{s.value}</span>
+          <span style={{color:"#999",fontSize:13}}>({(s.pct*100).toFixed(1)}%)</span>
+        </div>)}
       </div>
     </div>
   );

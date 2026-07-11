@@ -44,11 +44,30 @@ async def list_items(
     q = await _scope_query(db, user, section)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [{"id": x.id,             "activity": x.activity,             "target": x.target,             "achieved": x.achieved,             "progress": x.progress,             "deadline": x.deadline,             "status": x.status} for x in items]
+    out = []
+    for x in items:
+        d = {"id": x.id, "created_at": str(x.created_at) if x.created_at else None}
+        if x.dynamic_fields:
+            try:
+                df = json.loads(x.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = x.dynamic_fields
+            except:
+                d["dynamic_fields"] = x.dynamic_fields
+        else:
+            d.update({
+                "activity": x.activity, "target": x.target,
+                "achieved": x.achieved, "progress": x.progress,
+                "deadline": str(x.deadline) if x.deadline else None,
+                "status": x.status,
+            })
+        out.append(d)
+    return out
 
 @router.post("/create", status_code=201)
 async def create_item(
-        activity: str = Form(None),
+    dynamic_fields: str = Form(None),
+    activity: str = Form(None),
     target: str = Form(None),
     achieved: str = Form(None),
     progress: str = Form(None),
@@ -61,12 +80,13 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = AWPItem(
-                activity=activity,
+        activity=activity,
         target=target,
         achieved=achieved,
         progress=progress,
         deadline=date_type.fromisoformat(deadline) if deadline else None,
         status=status,
+        dynamic_fields=dynamic_fields,
         created_by=user.id,
     )
     db.add(obj)
@@ -77,7 +97,8 @@ async def create_item(
 @router.put("/{item_id}")
 async def update_item(
     item_id: int,
-        activity: str = Form(None),
+    dynamic_fields: str = Form(None),
+    activity: str = Form(None),
     target: str = Form(None),
     achieved: str = Form(None),
     progress: str = Form(None),
@@ -93,6 +114,8 @@ async def update_item(
     obj = result.scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "awp item not found")
+    if dynamic_fields is not None:
+        obj.dynamic_fields = dynamic_fields
     if activity is not None:
         obj.activity = activity
     if target is not None:
@@ -207,7 +230,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"achieved","activity","deadline","progress","status","target"}
+    fixed_fields = {"achieved","activity","deadline","progress","status","target"}
     title_header = next((k for k,v in mapping_dict.items() if v=="activity"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -217,13 +240,20 @@ async def excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         item_name = row_data.get("activity", f"Imported-{r}")
@@ -231,12 +261,13 @@ async def excel_import(
             skipped += 1
             continue
         obj = AWPItem(
-                        activity=row_data.get("activity"),
+            activity=row_data.get("activity"),
             target=row_data.get("target"),
             achieved=row_data.get("achieved"),
             progress=row_data.get("progress"),
             deadline=row_data.get("deadline"),
             status=row_data.get("status"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(obj)

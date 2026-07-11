@@ -3,6 +3,7 @@ import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.base import KnowledgeItem, User, Notification
 from app.auth.deps import get_current_user
@@ -19,12 +20,13 @@ async def list_knowledge(
     user: User = Depends(get_current_user),
 ):
     role_name = user.role.name if user.role else "viewer"
+    base = select(KnowledgeItem).options(selectinload(KnowledgeItem.creator))
     if role_name == "admin":
-        q = select(KnowledgeItem).order_by(KnowledgeItem.created_at.desc())
+        q = base.order_by(KnowledgeItem.created_at.desc())
     elif role_name == "ops_manager":
-        q = select(KnowledgeItem).order_by(KnowledgeItem.created_at.desc())
+        q = base.order_by(KnowledgeItem.created_at.desc())
     else:
-        q = select(KnowledgeItem).where(
+        q = base.where(
             (KnowledgeItem.user_id == user.id) | (KnowledgeItem.status == "approved")
         ).order_by(KnowledgeItem.created_at.desc())
     result = await db.execute(q)
@@ -44,6 +46,9 @@ async def list_knowledge(
             "admin_comment": k.admin_comment,
             "created_at": k.created_at.isoformat() if k.created_at else None,
             "updated_at": k.updated_at.isoformat() if k.updated_at else None,
+            "creator_name": k.creator.name if k.creator else None,
+            "creator_designation": k.creator.designation if k.creator else None,
+            "creator_section": k.creator.section if k.creator else None,
         }
         for k in items
     ]

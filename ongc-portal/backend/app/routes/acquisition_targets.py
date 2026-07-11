@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.database import get_db
-from app.models.base import AcquisitionTarget, ManpowerEmployee, User
+from app.models.base import AcquisitionTarget, ManpowerEmployee, User, TargetMonthHistory
 from app.auth.deps import get_current_user
+from app.auth.security import verify_password
 from typing import Optional
 import io, openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -115,6 +116,35 @@ async def export_targets(
     )
 
 
+@router.get("/acquisition-targets/history/summary")
+async def get_history_summary(
+    financial_year: Optional[str] = None,
+    month: Optional[str] = None,
+    project_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = select(TargetMonthHistory).order_by(TargetMonthHistory.created_at.desc())
+    q = q.join(AcquisitionTarget, TargetMonthHistory.target_id == AcquisitionTarget.id)
+    if financial_year:
+        q = q.where(AcquisitionTarget.financial_year == financial_year)
+    if month:
+        q = q.where(TargetMonthHistory.month == month)
+    if project_name:
+        q = q.where(AcquisitionTarget.project_name == project_name)
+    r = await db.execute(q)
+    return r.scalars().all()
+
+
+@router.get("/acquisition-targets/financial-years")
+async def list_financial_years(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    r = await db.execute(select(AcquisitionTarget.financial_year).distinct().order_by(AcquisitionTarget.financial_year))
+    return [row[0] for row in r]
+
+
 @router.get("/acquisition-targets/{target_id}")
 async def get_target(target_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     t = await db.get(AcquisitionTarget, target_id)
@@ -137,12 +167,121 @@ async def update_target(target_id: int, data: dict, db: AsyncSession = Depends(g
     t = await db.get(AcquisitionTarget, target_id)
     if not t:
         raise HTTPException(404, "Target not found")
+    role_name = user.role.name if user.role else "viewer"
+    if t.approved:
+        password = data.pop("_unlock_password", None)
+        if role_name != "admin" or not password:
+            raise HTTPException(403, "Target is approved. Only admin can edit after password verification.")
+        if not verify_password(password, user.password_hash):
+            raise HTTPException(400, "Incorrect admin password")
+        data.pop("approved", None)
+        data.pop("approved_by", None)
+    MONTH_COLS = ["apr","may","jun","jul","aug","sep","oct","nov","dec","jan","feb","mar"]
+    MONTH_COLS_ACH = [m+"_ach" for m in MONTH_COLS]
+    histories = []
     for k, v in data.items():
         if hasattr(t, k):
+            old = getattr(t, k)
+            if k in MONTH_COLS and old != v:
+                histories.append({"month": k, "field": "target", "old_value": old, "new_value": v})
+            elif k in MONTH_COLS_ACH and old != v:
+                histories.append({"month": k[:-4], "field": "achieved", "old_value": old, "new_value": v})
             setattr(t, k, v)
+    for h in histories:
+        db.add(TargetMonthHistory(
+            target_id=target_id, month=h["month"], field=h["field"],
+            old_value=h["old_value"], new_value=h["new_value"],
+            changed_by=user.id,
+        ))
     await db.commit()
     await db.refresh(t)
     return t
+
+
+@router.post("/acquisition-targets/{target_id}/approve")
+async def approve_target(target_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    role_name = user.role.name if user.role else "viewer"
+    if role_name not in ("admin", "ops_manager"):
+        raise HTTPException(403, "Only admin or ops_manager can approve")
+    t = await db.get(AcquisitionTarget, target_id)
+    if not t:
+        raise HTTPException(404, "Target not found")
+    t.approved = True
+    t.approved_by = user.id
+    await db.commit()
+    return {"success": True, "approved": True}
+
+
+@router.post("/acquisition-targets/{target_id}/unlock")
+async def unlock_target(
+    target_id: int,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    role_name = user.role.name if user.role else "viewer"
+    if role_name != "admin":
+        raise HTTPException(403, "Only admin can unlock")
+    password = data.get("password", "")
+    if not verify_password(password, user.password_hash):
+        raise HTTPException(400, "Incorrect admin password")
+    t = await db.get(AcquisitionTarget, target_id)
+    if not t:
+        raise HTTPException(404, "Target not found")
+    t.approved = False
+    t.approved_by = None
+    await db.commit()
+    return {"success": True, "approved": False}
+
+
+@router.post("/acquisition-targets/{target_id}/request-approval")
+async def request_approval(target_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    t = await db.get(AcquisitionTarget, target_id)
+    if not t:
+        raise HTTPException(404, "Target not found")
+    if t.approved:
+        raise HTTPException(400, "Target is already approved")
+    if t.approval_requested:
+        raise HTTPException(400, "Approval already requested for this target")
+    role_name = user.role.name if user.role else "viewer"
+    if role_name not in ("admin", "ops_manager", "data_creator"):
+        raise HTTPException(403, "Only admin, ops_manager, or data_creator can request approval")
+    t.approval_requested = True
+    t.approval_requested_by = user.id
+    await db.commit()
+    return {"success": True, "approval_requested": True}
+
+
+@router.post("/acquisition-targets/{target_id}/cancel-request")
+async def cancel_approval_request(target_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    t = await db.get(AcquisitionTarget, target_id)
+    if not t:
+        raise HTTPException(404, "Target not found")
+    if not t.approval_requested:
+        raise HTTPException(400, "No approval request to cancel")
+    if t.approved:
+        raise HTTPException(400, "Target is already approved, cannot cancel request")
+    role_name = user.role.name if user.role else "viewer"
+    if role_name not in ("admin", "ops_manager") and t.approval_requested_by != user.id:
+        raise HTTPException(403, "Only the requester or admin can cancel the request")
+    t.approval_requested = False
+    t.approval_requested_by = None
+    await db.commit()
+    return {"success": True, "approval_requested": False}
+
+
+@router.get("/acquisition-targets/{target_id}/history")
+async def get_target_history(
+    target_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    r = await db.execute(
+        select(TargetMonthHistory)
+        .where(TargetMonthHistory.target_id == target_id)
+        .order_by(TargetMonthHistory.created_at.desc())
+    )
+    return r.scalars().all()
 
 
 @router.delete("/acquisition-targets/{target_id}", status_code=204)

@@ -4,14 +4,20 @@ from app.models.base import ManpowerEmployee
 from sqlalchemy import text
 import openpyxl
 
-EXCEL_PATH = "/Users/ruchatejaskumargandhi/Desktop/ONGC 3/Manpower_Geophysical_Services-2026.06.22_035425.xlsx"
+SEED_DIR = os.path.join(os.path.dirname(__file__), "seed_data")
+EXCEL_PATH = os.path.join(SEED_DIR, "Manpower_Geophysical_Services.xlsx")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://ongc_user:ongc_pass@localhost:5432/ongc_db")
-
+SHEET_NAME = "Manpower Status GPS-2026"
 SECTION_KEYWORDS = ["Base Office", "GP-", "RCC", "REL"]
 
 async def main():
+    if not os.path.exists(EXCEL_PATH):
+        print(f"Excel file not found at {EXCEL_PATH}")
+        print("Place the manpower Excel file in the seed_data/ directory as Manpower_Geophysical_Services.xlsx")
+        return
+
     wb = openpyxl.load_workbook(EXCEL_PATH, data_only=True)
-    ws = wb["Manpower Status GPS-2026"]
+    ws = wb[SHEET_NAME]
 
     engine = create_async_engine(DATABASE_URL)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

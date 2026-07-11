@@ -1,19 +1,16 @@
 import { useState, useEffect } from "react";
 import { api } from "../../api";
-import { S, th } from "../shared/styles";
+import { S } from "../shared/styles";
 import { MiniUpload } from "../shared/MiniUpload";
 import { FileTableSection } from "../shared/FileTableSection";
 import ExcelUploadModal from "../ExcelUploadModal";
 
-
-
 export function Highlights({ user, onToast }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ title:"", description:"", author:"", icon:"🏆" });
+  const [form, setForm] = useState({ title:"", description:"", author:"" });
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [pageCats, setPageCats] = useState([]);
   const [fv, setFv] = useState(0);
   const canEdit = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
   const hlToast = (msg, type) => { if (onToast) onToast(msg, type); else alert(msg); };
@@ -32,11 +29,14 @@ export function Highlights({ user, onToast }) {
 
   const handleSave = async () => {
     if (!form.title || !form.description) { onToast?.("Title and description required", "error"); return; }
+    const fd = new FormData();
+    fd.append("dynamic_fields", JSON.stringify(form));
+    Object.entries(form).forEach(([k,v]) => fd.append(k, v));
     if (editing) {
-      await api.updateHighlight(editing.id, form).catch(() => { onToast?.("Failed to update", "error"); return; });
+      await api.updateHighlight(editing.id, fd).catch(() => { onToast?.("Failed to update", "error"); return; });
       onToast?.("Highlight updated", "success");
     } else {
-      await api.createHighlight(form.title, form.description, form.author).catch(() => { onToast?.("Failed to create", "error"); return; });
+      await api.createHighlight(fd).catch(() => { onToast?.("Failed to create", "error"); return; });
       onToast?.("Highlight created", "success");
     }
     setShowForm(false); setEditing(null); load();
@@ -49,19 +49,12 @@ export function Highlights({ user, onToast }) {
     load();
   };
 
-  if (loading) return <div style={S.page}><div style={{textAlign:"center",padding:40,fontSize:14,color:"#888"}}>Loading highlights...</div></div>;
   const [showUp, setShowUp] = useState(false);
+
+  if (loading) return <div style={S.page}><div style={{textAlign:"center",padding:40,fontSize:14,color:"#888"}}>Loading highlights...</div></div>;
 
   return (
     <div style={S.page}>
-      {pageCats.length > 0 && (
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
-          <span style={{fontSize:12,fontWeight:600,color:"#666"}}>Categories:</span>
-          {pageCats.map(c => (
-            <span key={c} style={{display:"inline-block",padding:"2px 10px",borderRadius:12,fontSize:12,fontWeight:600,background:"#e8edf2",color:"#0b3d91"}}>{c}</span>
-          ))}
-        </div>
-      )}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:24, flexWrap:"wrap", gap:8 }}>
         <div style={S.title}>Highlights</div>
         <div style={{display:"flex",gap:6}}>
@@ -73,14 +66,14 @@ export function Highlights({ user, onToast }) {
         </div>
       </div>
 
-      {showUp && <MiniUpload user={user} section="Highlights" fields={{title:"Title",category:"Category"}} onUpload={() => setFv(x=>x+1)} onToast={hlToast} />}
+      {showUp && <MiniUpload user={user} section="Highlights" page="Highlights" onUpload={() => setFv(x=>x+1)} onToast={hlToast} />}
 
       {showForm && (
-        <div style={{...S.section, background:"#f8faff", border:"1px solid #d0d8e8"}}>
+        <div style={{...S.section, background:"#f8faff", border:"1px solid #d0d8e8", marginBottom:16}}>
           <div style={{...S.sectionTitle, border:"none", marginBottom:12}}>{editing ? "Edit Highlight" : "New Highlight"}</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <input style={S.input} value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="Highlight title" />
-            <textarea style={S.textarea} value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} placeholder="Description of the achievement..." rows={3} />
+            <textarea style={{...S.input,resize:"vertical",minHeight:60}} value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} placeholder="Description of the achievement..." rows={3} />
             <div style={{display:"flex",gap:12,alignItems:"center"}}>
               <input style={{...S.input,flex:1}} value={form.author} onChange={e=>setForm(p=>({...p,author:e.target.value}))} placeholder="Author name" />
             </div>
@@ -130,4 +123,3 @@ export function Highlights({ user, onToast }) {
     </div>
   );
 }
-

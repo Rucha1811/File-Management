@@ -56,10 +56,24 @@ async def list_items(
     q = await _scope_query(db, user, section)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [{"id": x.id,             "section": x.section,             "equipment": x.equipment,             "status": x.status,             "last_calibration": x.last_calibration,             "next_due": x.next_due} for x in items]
+    out = []
+    for x in items:
+        d = {"id": x.id}
+        if x.dynamic_fields:
+            try:
+                df = json.loads(x.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = x.dynamic_fields
+            except:
+                d["dynamic_fields"] = x.dynamic_fields
+        else:
+            d.update({"section": x.section, "equipment": x.equipment, "status": x.status, "last_calibration": x.last_calibration, "next_due": x.next_due})
+        out.append(d)
+    return out
 
 @router.post("/create", status_code=201)
 async def create_item(
+    dynamic_fields: str = Form(None),
         section: str = Form(None),
     equipment: str = Form(None),
     status: str = Form(None),
@@ -72,7 +86,8 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = RegionalLabEquipment(
-                section=section,
+                dynamic_fields=dynamic_fields,
+        section=section,
         equipment=equipment,
         status=status,
         last_calibration=date_type.fromisoformat(last_calibration) if last_calibration else None,
@@ -87,6 +102,7 @@ async def create_item(
 @router.put("/{item_id}")
 async def update_item(
     item_id: int,
+    dynamic_fields: str = Form(None),
         section: str = Form(None),
     equipment: str = Form(None),
     status: str = Form(None),
@@ -112,6 +128,8 @@ async def update_item(
         obj.last_calibration = date_type.fromisoformat(last_calibration)
     if next_due is not None:
         obj.next_due = next_due
+    if dynamic_fields is not None:
+        obj.dynamic_fields = dynamic_fields
     await db.commit()
     return {"success": True}
 
@@ -214,7 +232,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"equipment","last_calibration","next_due","section","status"}
+    fixed_fields = {"equipment","last_calibration","next_due","section","status"}
     title_header = next((k for k,v in mapping_dict.items() if v=="section"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -224,13 +242,20 @@ async def excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         item_name = row_data.get("section", f"Imported-{r}")
@@ -238,11 +263,12 @@ async def excel_import(
             skipped += 1
             continue
         obj = RegionalLabEquipment(
-                        section=row_data.get("section"),
+            section=row_data.get("section"),
             equipment=row_data.get("equipment"),
             status=row_data.get("status"),
             last_calibration=row_data.get("last_calibration"),
             next_due=row_data.get("next_due"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(obj)

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../../api";
 import { S, th, td, badge, C0 } from "../shared/styles";
 import { DonutSimple } from "../shared/Charts";
+import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
 
 
@@ -21,6 +22,7 @@ export function RegionalLab({ initialTab, user, onToast }) {
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [form, setForm] = useState({ equipment:"", status:"Operational", last_calibration:"", next_due:"" });
   const [showForm, setShowForm] = useState(false);
+  const [drillDown, setDrillDown] = useState(null);
   const canEdit = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
 
   useEffect(() => {
@@ -56,6 +58,7 @@ export function RegionalLab({ initialTab, user, onToast }) {
     if (!form.equipment) { onToast?.("Equipment name required", "error"); return; }
     const fd = new FormData();
     fd.append("section", active);
+    fd.append("dynamic_fields", JSON.stringify(form));
     Object.entries(form).forEach(([k,v]) => { if (v) fd.append(k, v); });
     await api.createRegionalLab(fd).catch(() => { onToast?.("Failed to create", "error"); return; });
     onToast?.("Equipment record created", "success");
@@ -118,8 +121,8 @@ export function RegionalLab({ initialTab, user, onToast }) {
         </div>
       ) : ( <>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-        {[["Total Equipment",total,C0.blue],["Operational",operational,C0.green],["Non-Operational",total-operational,C0.orange]].map(([l,v,c])=>(
-          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        {[["Total Equipment",total,C0.blue,null],["Operational",operational,C0.green,r=>r.status==="Operational"],["Non-Operational",total-operational,C0.orange,r=>r.status!=="Operational"]].map(([l,v,c,fl])=>(
+          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:fl?"pointer":"default"}} onClick={()=>fl&&setDrillDown({title:l,data:rows.filter(fl).map(r=>({Equipment:r.equipment,Status:r.status,LastCalibration:r.last_calibration,NextDue:r.next_due}))})}>
             <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
             <div style={{fontSize:13,color:"#888",fontWeight:600,textTransform:"uppercase",marginTop:2}}>{l}</div>
           </div>
@@ -130,7 +133,7 @@ export function RegionalLab({ initialTab, user, onToast }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
           <div style={S.section}>
             <div style={S.sectionTitle}>Equipment Status</div>
-            <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red,C0.purple]} size={120}/>
+            <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red,C0.purple]} size={120} onClick={k=>setDrillDown({title:"Status: "+k,data:rows.filter(r=>r.status===k).map(r=>({Equipment:r.equipment,LastCalibration:r.last_calibration,NextDue:r.next_due}))})}/>
           </div>
         </div>
       )}
@@ -150,6 +153,7 @@ export function RegionalLab({ initialTab, user, onToast }) {
         </table>
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelLabPreview} apiImport={api.excelLabImport} fields="regional_lab" onSuccess={()=>{load(active)}} />
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
       </> )}
     </div>
   );

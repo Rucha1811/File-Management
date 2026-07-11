@@ -56,10 +56,24 @@ async def list_items(
     q = await _scope_query(db, user, section)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [{"id": x.id,             "section": x.section,             "project": x.project,             "volume": x.volume,             "unit": x.unit,             "progress": x.progress,             "status": x.status,             "due_date": str(x.due_date) if x.due_date else None} for x in items]
+    out = []
+    for x in items:
+        d = {"id": x.id}
+        if x.dynamic_fields:
+            try:
+                df = json.loads(x.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = x.dynamic_fields
+            except:
+                d["dynamic_fields"] = x.dynamic_fields
+        else:
+            d.update({"section": x.section, "project": x.project, "volume": x.volume, "unit": x.unit, "progress": x.progress, "status": x.status, "due_date": str(x.due_date) if x.due_date else None})
+        out.append(d)
+    return out
 
 @router.post("/create", status_code=201)
 async def create_item(
+    dynamic_fields: str = Form(None),
         section: str = Form(None),
     project: str = Form(None),
     volume: float = Form(...),
@@ -74,7 +88,8 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = DataProcessingItem(
-                section=section,
+                dynamic_fields=dynamic_fields,
+        section=section,
         project=project,
         volume=volume,
         unit=unit,
@@ -91,6 +106,7 @@ async def create_item(
 @router.put("/{item_id}")
 async def update_item(
     item_id: int,
+    dynamic_fields: str = Form(None),
         section: str = Form(None),
     project: str = Form(None),
     volume: float = Form(None),
@@ -122,6 +138,8 @@ async def update_item(
         obj.status = status
     if due_date is not None:
         obj.due_date = date_type.fromisoformat(due_date)
+    if dynamic_fields is not None:
+        obj.dynamic_fields = dynamic_fields
     await db.commit()
     return {"success": True}
 
@@ -224,7 +242,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"due_date","progress","project","section","status","unit","volume"}
+    fixed_fields = {"due_date","progress","project","section","status","unit","volume"}
     title_header = next((k for k,v in mapping_dict.items() if v=="section"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -234,13 +252,20 @@ async def excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         item_name = row_data.get("section", f"Imported-{r}")
@@ -248,13 +273,14 @@ async def excel_import(
             skipped += 1
             continue
         obj = DataProcessingItem(
-                        section=row_data.get("section"),
+            section=row_data.get("section"),
             project=row_data.get("project"),
             volume=row_data.get("volume"),
             unit=row_data.get("unit"),
             progress=row_data.get("progress"),
             status=row_data.get("status"),
             due_date=row_data.get("due_date"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(obj)

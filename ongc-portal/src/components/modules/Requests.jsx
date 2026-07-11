@@ -22,13 +22,13 @@ export function Requests({ user, onToast }) {
 
   const handleCreate = async () => {
     if (!form.title) { onToast?.("Title required", "error"); return; }
-    await api.createRequest(form.title, form.description, form.target_type).catch(() => {
-      onToast?.("Failed to create request", "error");
-    });
-    onToast?.("Request submitted", "success");
-    setForm({ title: "", description: "", target_type: "general" });
-    setShowForm(false);
-    load();
+    try {
+      await api.createRequest(form.title, form.description, form.target_type);
+      onToast?.("Request submitted", "success");
+      setForm({ title: "", description: "", target_type: "general" });
+      setShowForm(false);
+      load();
+    } catch { onToast?.("Failed to create request", "error"); }
   };
 
   const badge = (status) => {

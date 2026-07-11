@@ -44,14 +44,31 @@ async def list_items(
     q = await _scope_query(db, user, section)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [{"id": x.id,             "head": x.head,             "allocated": x.allocated,             "spent": x.spent,             "remaining": x.remaining} for x in items]
+    out = []
+    for x in items:
+        d = {"id": x.id}
+        if x.dynamic_fields:
+            try:
+                df = json.loads(x.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = x.dynamic_fields
+            except:
+                d["dynamic_fields"] = x.dynamic_fields
+        else:
+            d.update({
+                "head": x.head, "allocated": x.allocated,
+                "spent": x.spent, "remaining": x.remaining,
+            })
+        out.append(d)
+    return out
 
 @router.post("/create", status_code=201)
 async def create_item(
-        head: str = Form(None),
-    allocated: float = Form(...),
-    spent: float = Form(...),
-    remaining: float = Form(...),
+    dynamic_fields: str = Form(None),
+    head: str = Form(None),
+    allocated: float = Form(None),
+    spent: float = Form(None),
+    remaining: float = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -59,10 +76,11 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = FundManagement(
-                head=head,
+        head=head,
         allocated=allocated,
         spent=spent,
         remaining=remaining,
+        dynamic_fields=dynamic_fields,
         created_by=user.id,
     )
     db.add(obj)
@@ -73,7 +91,8 @@ async def create_item(
 @router.put("/{item_id}")
 async def update_item(
     item_id: int,
-        head: str = Form(None),
+    dynamic_fields: str = Form(None),
+    head: str = Form(None),
     allocated: float = Form(None),
     spent: float = Form(None),
     remaining: float = Form(None),
@@ -87,6 +106,8 @@ async def update_item(
     obj = result.scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "fund management not found")
+    if dynamic_fields is not None:
+        obj.dynamic_fields = dynamic_fields
     if head is not None:
         obj.head = head
     if allocated is not None:
@@ -197,7 +218,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"allocated","head","remaining","spent"}
+    fixed_fields = {"allocated","head","remaining","spent"}
     title_header = next((k for k,v in mapping_dict.items() if v=="head"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -207,13 +228,20 @@ async def excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         item_name = row_data.get("head", f"Imported-{r}")
@@ -221,10 +249,11 @@ async def excel_import(
             skipped += 1
             continue
         obj = FundManagement(
-                        head=row_data.get("head"),
+            head=row_data.get("head"),
             allocated=row_data.get("allocated"),
             spent=row_data.get("spent"),
             remaining=row_data.get("remaining"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(obj)

@@ -26,6 +26,9 @@ docker-compose up --build -d
 
 # Seed the database with initial roles, users, and sample files
 docker-compose exec api python seed.py
+
+# Seed manpower employee data from Excel
+docker-compose exec api python seed_manpower_excel.py
 ```
 
 > Or run without Docker:

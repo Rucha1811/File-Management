@@ -33,24 +33,27 @@ async def list_highlights(
             q = q.where(Highlight.created_by == current_user.id)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [
-        {
-            "id": h.id,
-            "title": h.title,
-            "description": h.description,
-            "author": h.author or (h.creator.name if h.creator else ""),
-            "icon": h.icon or "🏆",
-            "created_by": h.created_by,
-            "created_at": h.created_at.isoformat() if h.created_at else None,
-        }
-        for h in items
-    ]
+    out = []
+    for h in items:
+        d = {"id": h.id}
+        if h.dynamic_fields:
+            try:
+                df = json.loads(h.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = h.dynamic_fields
+            except:
+                d["dynamic_fields"] = h.dynamic_fields
+        else:
+            d.update({"title": h.title, "description": h.description, "author": h.author or (h.creator.name if h.creator else ""), "icon": h.icon or "🏆", "created_by": h.created_by, "created_at": h.created_at.isoformat() if h.created_at else None})
+        out.append(d)
+    return out
 
 
 @router.post("/create")
 async def create_highlight(
-    title: str,
-    description: str,
+    dynamic_fields: str = None,
+    title: str = "",
+    description: str = "",
     author: str = None,
     icon: str = "🏆",
     db: AsyncSession = Depends(get_db),
@@ -62,6 +65,7 @@ async def create_highlight(
     if not title or not description:
         raise HTTPException(status_code=400, detail="Title and description required")
     hl = Highlight(
+        dynamic_fields=dynamic_fields,
         title=title,
         description=description,
         author=author or current_user.name,
@@ -85,6 +89,7 @@ async def create_highlight(
 @router.put("/{highlight_id}")
 async def update_highlight(
     highlight_id: int,
+    dynamic_fields: str = None,
     title: str = None,
     description: str = None,
     author: str = None,
@@ -107,6 +112,8 @@ async def update_highlight(
         hl.author = author
     if icon:
         hl.icon = icon
+    if dynamic_fields is not None:
+        hl.dynamic_fields = dynamic_fields
     hl.updated_at = datetime.utcnow()
     await db.commit()
     return {"success": True, "highlight_id": highlight_id}
@@ -227,7 +234,7 @@ async def highlight_excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"title","description","author","icon"}
+    fixed_fields = {"title","description","author","icon"}
     title_header = next((k for k,v in mapping_dict.items() if v=="title"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -237,14 +244,21 @@ async def highlight_excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    if field_name == "title":
-                        has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                if field_name == "title":
+                    has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         hname = row_data.get("title", f"Imported-{r}")
@@ -256,6 +270,7 @@ async def highlight_excel_import(
             description=row_data.get("description", ""),
             author=row_data.get("author"),
             icon=row_data.get("icon", "🏆"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(hl)

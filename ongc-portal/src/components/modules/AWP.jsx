@@ -24,6 +24,15 @@ export function AWP({ user, onToast }) {
   const handleCreate = async () => {
     if (!form.activity) { onToast?.("Activity required", "error"); return; }
     const fd = new FormData();
+    const df = {
+      "Activity": form.activity,
+      "Target": form.target,
+      "Achieved": form.achieved,
+      "Progress %": form.progress,
+      "Deadline": form.deadline,
+      "Status": form.status,
+    };
+    fd.append("dynamic_fields", JSON.stringify(df));
     Object.entries(form).forEach(([k,v]) => fd.append(k, v));
     await api.createAWPItem(fd).catch(() => { onToast?.("Failed to create", "error"); return; });
     onToast?.("AWP item created", "success");
@@ -70,12 +79,12 @@ export function AWP({ user, onToast }) {
       <div style={S.section}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead><tr><th style={th}>Activity</th><th style={th}>Target</th><th style={th}>Achieved</th><th style={th}>Progress</th><th style={th}>Deadline</th><th style={th}>Status</th>{canEdit && <th style={th}>Actions</th>}</tr></thead>
-          <tbody>{items.map((d,i)=>(
+            <tbody>{items.map((d,i)=>(
             <tr key={d.id} style={{background:i%2===0?"#fff":"#f8f9fa"}}>
-              <td style={td}>{d.activity}</td><td style={td}>{d.target}</td><td style={td}>{d.achieved}</td>
-              <td style={td}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:60,height:6,background:"#eee",borderRadius:3}}><div style={{width:d.progress,height:6,background:d.status==="On Track"?"#1B5E20":d.status==="Critical"?"#e74c3c":"#E65100",borderRadius:3}}/></div>{d.progress}</div></td>
-              <td style={{...td,fontWeight:600,color:d.status==="Critical"?"#e74c3c":"#333"}}>{d.deadline ? String(d.deadline).slice(0,10) : ""}</td>
-              <td style={td}><span style={badge(d.status==="On Track"?"#1B5E20":d.status==="Needs Attention"?"#E65100":"#e74c3c")}>{d.status}</span></td>
+              <td style={td}>{d.activity || d.Activity}</td><td style={td}>{d.target || d.Target}</td><td style={td}>{d.achieved || d.Achieved}</td>
+              <td style={td}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:60,height:6,background:"#eee",borderRadius:3}}><div style={{width:d.progress || d["Progress %"] || d.Progress,height:6,background:(d.status||d.Status)==="On Track"?"#1B5E20":(d.status||d.Status)==="Critical"?"#e74c3c":"#E65100",borderRadius:3}}/></div>{d.progress || d["Progress %"] || d.Progress || ""}</div></td>
+              <td style={{...td,fontWeight:600,color:(d.status||d.Status)==="Critical"?"#e74c3c":"#333"}}>{(d.deadline || d.Deadline) ? String(d.deadline || d.Deadline).slice(0,10) : ""}</td>
+              <td style={td}><span style={badge((d.status||d.Status)==="On Track"?"#1B5E20":(d.status||d.Status)==="Needs Attention"?"#E65100":"#e74c3c")}>{d.status || d.Status}</span></td>
               {canEdit && <td style={td}><button style={{fontSize:12,padding:"2px 8px",border:"none",borderRadius:3,background:"#ffebee",color:"#c62828",cursor:"pointer"}} onClick={()=>handleDelete(d.id)}>Del</button></td>}
             </tr>
           ))}</tbody>

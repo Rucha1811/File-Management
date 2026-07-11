@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api";
+import { DrillDownModal } from "./shared/DrillDownModal";
 
 const COLORS = ["#0b3d91","#1B5E20","#E65100","#B71C1C","#7B1FA2","#00695C","#1565c0","#2E7D32","#F57C00","#6A1B9A"];
 
@@ -9,6 +10,7 @@ export default function ActivityAnalytics({ user }) {
   const [targets, setTargets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [drillDown, setDrillDown] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -71,12 +73,15 @@ export default function ActivityAnalytics({ user }) {
           { label:"Approved", value:data.totalApprovals, color:"#1B5E20", bg:"#E8F5E9" },
           { label:"Rejected", value:data.totalRejections, color:"#B71C1C", bg:"#FFEBEE" },
           { label:"Pending Now", value:data.totalPending, color:"#E65100", bg:"#FFF3E0" },
-        ].map(s => (
-          <div key={s.label} style={{ background:s.bg, borderRadius:8, padding:14, textAlign:"center", boxShadow:"0 1px 4px rgba(0,0,0,0.06)" }}>
+        ].map(s => {
+          const filter = s.label === "Uploads" ? () => true : s.label === "Approved" ? () => true : s.label === "Rejected" ? () => true : s.label === "Pending Now" ? () => true : null;
+          return (
+          <div key={s.label} style={{ background:s.bg, borderRadius:8, padding:14, textAlign:"center", boxShadow:"0 1px 4px rgba(0,0,0,0.06)", cursor:"pointer" }} onClick={() => setDrillDown({ title:s.label, data:[{Metric:s.label,Count:s.value,Period:period==="week"?"Last 7 days":"Last 30 days"}] })}>
             <div style={{ fontSize:11, fontWeight:600, color:s.color, opacity:0.7, textTransform:"uppercase", letterSpacing:0.5 }}>{s.label}</div>
             <div style={{ fontSize:28, fontWeight:800, color:s.color }}>{s.value}</div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {targets.length > 0 && (
@@ -87,7 +92,7 @@ export default function ActivityAnalytics({ user }) {
             const goalH = (Number(t.target_value) / maxVal) * 100;
             const achH = (Number(t.achieved) / maxVal) * 100;
             return (
-              <div key={t.id} style={{ marginBottom:16, display:"flex", alignItems:"center", gap:16 }}>
+              <div key={t.id} style={{ marginBottom:16, display:"flex", alignItems:"center", gap:16, cursor:"pointer" }} onClick={() => setDrillDown({title:"Target: "+t.title,data:[{Title:t.title,Goal:t.target_value,Achieved:t.achieved,Section:t.section}]})}>
                 <div style={{ minWidth:120, flexShrink:0 }}>
                   <div style={{ fontSize:12, fontWeight:600, color:"#333" }}>{t.title}</div>
                   {t.section && <div style={{ fontSize:10, color:"#888" }}>{t.section}</div>}
@@ -115,7 +120,7 @@ export default function ActivityAnalytics({ user }) {
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {Object.entries(data.approvalsBySection).map(([k,v],i) => (
-                <div key={k} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div key={k} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={() => setDrillDown({title:"Approvals: "+k,data:data.recentActivity?.filter(a=>a.details?.toLowerCase().includes(k.toLowerCase())).map(a=>({Action:a.action,Details:a.details,Date:a.timestamp?new Date(a.timestamp).toLocaleDateString():""}))||[]})}>
                   <div style={{ width:70, fontSize:11, color:"#5a6a7a", textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{k}</div>
                   <div style={{ flex:1, height:16, background:"#f0f4f8", borderRadius:8, overflow:"hidden" }}>
                     <div style={{ width:`${(v/maxAppSec)*100}%`, height:"100%", background:"#1B5E20", borderRadius:8, transition:"width 0.6s", minWidth: v>0?6:0 }}/>
@@ -135,7 +140,7 @@ export default function ActivityAnalytics({ user }) {
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               {Object.entries(data.approvalsByClassification).map(([k,v],i) => (
-                <div key={k} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div key={k} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={() => setDrillDown({title:"Approvals: "+k,data:data.recentActivity?.filter(a=>a.details?.toLowerCase().includes(k.toLowerCase())).map(a=>({Action:a.action,Details:a.details,Date:a.timestamp?new Date(a.timestamp).toLocaleDateString():""}))||[]})}>
                   <div style={{ width:100, fontSize:11, color:"#5a6a7a", textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{k}</div>
                   <div style={{ flex:1, height:16, background:"#f0f4f8", borderRadius:8, overflow:"hidden" }}>
                     <div style={{ width:`${(v/maxAppCls)*100}%`, height:"100%", background:"#1565c0", borderRadius:8, transition:"width 0.6s", minWidth: v>0?6:0 }}/>
@@ -155,9 +160,9 @@ export default function ActivityAnalytics({ user }) {
           <div style={{ color:"#aaa", textAlign:"center", padding:24 }}>No uploads in this period.</div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {Object.entries(data.uploadsBySection).map(([k,v],i) => (
-              <div key={k} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ width:80, fontSize:11, color:"#5a6a7a", textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{k}</div>
+              {Object.entries(data.uploadsBySection).map(([k,v],i) => (
+                <div key={k} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={() => setDrillDown({title:"Uploads: "+k,data:data.recentActivity?.filter(a=>a.details?.toLowerCase().includes(k.toLowerCase())).map(a=>({Action:a.action,Details:a.details,Date:a.timestamp?new Date(a.timestamp).toLocaleDateString():""}))||[]})}>
+                  <div style={{ width:80, fontSize:11, color:"#5a6a7a", textAlign:"right", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{k}</div>
                 <div style={{ flex:1, height:16, background:"#f0f4f8", borderRadius:8, overflow:"hidden" }}>
                   <div style={{ width:`${(v/maxUpSec)*100}%`, height:"100%", background:"#1565c0", borderRadius:8, transition:"width 0.6s", minWidth: v>0?6:0 }}/>
                 </div>
@@ -175,9 +180,9 @@ export default function ActivityAnalytics({ user }) {
           <div style={{ color:"#aaa", textAlign:"center", padding:24 }}>No activity in this period.</div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            {Object.entries(data.byDate).slice(-14).map(([k,v]) => (
-              <div key={k} style={{ display:"flex", alignItems:"center", gap:8 }}>
-                <div style={{ width:80, fontSize:10, color:"#5a6a7a", textAlign:"right" }}>{k.slice(5)}</div>
+              {Object.entries(data.byDate).slice(-14).map(([k,v]) => (
+                <div key={k} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer" }} onClick={() => setDrillDown({title:"Date: "+k,data:data.recentActivity?.filter(a=>a.timestamp?.startsWith(k)).map(a=>({Action:a.action,Details:a.details,Date:new Date(a.timestamp).toLocaleDateString()}))||[]})}>
+                  <div style={{ width:80, fontSize:10, color:"#5a6a7a", textAlign:"right" }}>{k.slice(5)}</div>
                 <div style={{ flex:1, height:14, background:"#f0f4f8", borderRadius:7, overflow:"hidden" }}>
                   <div style={{ width:`${(v/maxDate)*100}%`, height:"100%", background:"#0b3d91", borderRadius:7, transition:"width 0.6s", minWidth: v>0?6:0 }}/>
                 </div>
@@ -251,6 +256,7 @@ export default function ActivityAnalytics({ user }) {
           </table>
         )}
       </div>
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
     </div>
   );
 }

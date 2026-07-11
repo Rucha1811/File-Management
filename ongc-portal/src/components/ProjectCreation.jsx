@@ -280,9 +280,8 @@ export default function ProjectCreation({ user, onToast }) {
       <>
       <div style={S.page}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-          <div style={S.title}>Projects (Inhouse/Outsourced)</div>
+          <div style={S.title}>Projects</div>
           <div style={{display:"flex",gap:8}}>
-            {role === "admin" || role === "ops_manager" ? <button style={{...S.btn,background:"#2E7D32",color:"#fff",fontSize:13}} onClick={() => setShowExcelModal(true)}>📥 Upload Excel</button> : null}
             {canCreate && <button style={{ ...S.btn, background:"#0b3d91", color:"#fff" }} onClick={openForm}>+ Create New Project</button>}
           </div>
         </div>
@@ -309,7 +308,13 @@ export default function ProjectCreation({ user, onToast }) {
           <span style={{fontSize:11,color:"#999",marginLeft:"auto"}}>{filtered.length} of {projects.length} projects</span>
         </div>
 
-        {loading ? (
+          <div style={{display:"flex",gap:12,fontSize:11,marginBottom:8,alignItems:"center"}}>
+            <span><span style={{display:"inline-block",width:12,height:12,background:"#2E7D32",borderRadius:2,marginRight:4,verticalAlign:"middle"}}></span> In-House</span>
+            <span><span style={{display:"inline-block",width:12,height:12,background:"#E65100",borderRadius:2,marginRight:4,verticalAlign:"middle"}}></span> Outsourced</span>
+            <span style={{flex:1}}></span>
+            <span style={{fontSize:11,color:"#999"}}>Season filter: <strong>{pFilter.season || "All"}</strong></span>
+          </div>
+          {loading ? (
           <div style={{ textAlign:"center", padding:40, color:"#999" }}>Loading projects...</div>
         ) : (
           <>
@@ -322,13 +327,14 @@ export default function ProjectCreation({ user, onToast }) {
                 const pfPending = pf.filter(f=>f.status==="Pending").length;
                 const pfRejected = pf.filter(f=>f.status==="Rejected").length;
                 return (
-                <div key={p.id} style={S.card} onClick={() => openDetail(p.id)}
+                <div key={p.id} style={{...S.card, borderLeft:`4px solid ${p.contractor_name ? "#E65100" : "#2E7D32"}`}} onClick={() => openDetail(p.id)}
                   onMouseEnter={e => e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.15)"}
                   onMouseLeave={e => e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.1)"}
                 >
                   <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
                     <div style={{ fontSize:15, fontWeight:700, color:"#0b3d91" }}>{p.project_name}</div>
                     {p.category && <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"#E3F2FD", color:"#1565C0", fontWeight:600 }}>{p.category}</span>}
+                    <span style={{ fontSize:9, padding:"2px 6px", borderRadius:3, background:p.contractor_name?"#FFF3E0":"#E8F5E9", color:p.contractor_name?"#E65100":"#2E7D32", fontWeight:600, marginLeft:"auto"}}>{p.contractor_name ? "Outsourced" : "In-House"}</span>
                   </div>
                   <div style={{ fontSize:12, color:"#666", display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
                     {p.number && <div><strong>No:</strong> {p.number}</div>}
@@ -507,7 +513,9 @@ function ProjectDetailView({ project, onToast, onBack, onDelete, user }) {
   const [sortDir, setSortDir] = useState("asc");
   const [editingType, setEditingType] = useState(null);
   const [editingClass, setEditingClass] = useState(null);
+  const [showSummaryFile, setShowSummaryFile] = useState(null);
   const [projectStatus, setProjectStatus] = useState(p.status || "Active");
+  const [showUploadForm, setShowUploadForm] = useState(false);
   const [projStatusLoading, setProjStatusLoading] = useState(false);
 
   const [classifs, setClassifs] = useState(["General / Available for All","Sensitive / Internal Use","Confidential","Highly Confidential / Restricted"]);
@@ -703,8 +711,18 @@ function ProjectDetailView({ project, onToast, onBack, onDelete, user }) {
         <button style={{ padding:"10px 24px", border:"none", borderRadius:4, cursor:"pointer", fontSize:13, fontWeight:600, background:"#e74c3c", color:"#fff" }} onClick={onDelete}>Delete</button>
       </div>
 
-      {role !== "viewer" && (
-        <FileUploadForm user={user} projectName={p.project_name} onUpload={fetchProjectFiles} onToast={onToast} />
+      {(role === "admin" || role === "ops_manager" || role === "data_creator") && (
+        <div style={{marginBottom:16}}>
+          <button style={{padding:"6px 14px",border:`1px solid ${showUploadForm?"#c62828":"#1565C0"}`,borderRadius:4,background:showUploadForm?"#fff":"#1565C0",color:showUploadForm?"#c62828":"#fff",cursor:"pointer",fontSize:12,fontWeight:600}}
+            onClick={() => setShowUploadForm(s=>!s)}>
+            {showUploadForm ? "✕ Close Upload" : "📤 Upload File"}
+          </button>
+          {showUploadForm && (
+            <div style={{marginTop:12}}>
+              <FileUploadForm user={user} projectName={p.project_name} onUpload={fetchProjectFiles} onToast={onToast} />
+            </div>
+          )}
+        </div>
       )}
 
       <div style={S.section}>
@@ -805,6 +823,7 @@ function ProjectDetailView({ project, onToast, onBack, onDelete, user }) {
                   <td style={{ padding:"8px 10px", color:"#999" }}>{i + 1}</td>
                   <td style={{ padding:"8px 10px", fontWeight:500, color:"#0b3d91" }}>
                     {f.fileName || f.file_name}
+                    {f.summary && <button style={{ marginLeft:6, padding:"1px 8px", border:"1px solid #90caf9", borderRadius:3, cursor:"pointer", fontSize:10, fontWeight:600, background:"#E3F2FD", color:"#1565c0" }} onClick={e => { e.stopPropagation(); setShowSummaryFile(f); }}>Summary</button>}
                     {f.snippet && <div style={{ fontSize:11, color:"#555", marginTop:3, padding:"3px 6px", background:"#fafafa", borderRadius:4, borderLeft:"3px solid #90caf9", lineHeight:1.3, fontWeight:400 }}>{f.snippet}</div>}
                   </td>
                   <td style={{ padding:"8px 10px" }}>
@@ -888,6 +907,20 @@ function ProjectDetailView({ project, onToast, onBack, onDelete, user }) {
               <span>{ev.description}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {showSummaryFile && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }}
+          onClick={() => setShowSummaryFile(null)}>
+          <div style={{ background:"#fff", borderRadius:10, padding:24, maxWidth:600, width:"90%", maxHeight:"70vh", overflowY:"auto", boxShadow:"0 8px 32px rgba(0,0,0,0.3)" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <span style={{ fontSize:16, fontWeight:700, color:"#0b3d91" }}>Summary — {showSummaryFile.fileName || showSummaryFile.file_name}</span>
+              <button style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:"#999" }} onClick={() => setShowSummaryFile(null)}>×</button>
+            </div>
+            <div style={{ fontSize:14, lineHeight:1.6, color:"#333" }}>{showSummaryFile.summary}</div>
+          </div>
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ from app.activity_utils import log_activity
 from app.utils.pdf_extract import extract_text_from_pdf
 from app.utils.embeddings import generate_embedding
 import os
+import json
 from app.config import settings
 import logging
 from datetime import datetime, timezone, timedelta
@@ -27,7 +28,7 @@ def get_accessible_classifications(role_name: str, permissions: list) -> set:
     accessible = {"General / Available for All"}
     if role_name == "admin":
         return {"General / Available for All", "Sensitive / Internal Use", "Confidential", "Highly Confidential / Restricted"}
-    if role_name == "ops_manager":
+    if role_name in ("ops_manager", "data_creator"):
         accessible.add("Sensitive / Internal Use")
     # Add any non-expired granted permissions
     for p in permissions:
@@ -188,6 +189,11 @@ def file_to_dict(f: File) -> dict:
         "status": f.status,
         "uploaded_by": f.uploaded_by,
         "uploaded_by_name": f.uploader.name if f.uploader else str(f.uploaded_by),
+        "uploaded_by_cpf": f.uploader.cpf if f.uploader else None,
+        "uploaded_by_designation": f.uploader.designation if f.uploader else None,
+        "uploaded_by_section": f.uploader.section if f.uploader else None,
+        "uploaded_by_area": f.uploader.area if f.uploader else None,
+        "uploaded_by_category": f.uploader.user_category if f.uploader else None,
         "uploaded_by_role": role_name,
         "upload_date": f.upload_date.isoformat() if f.upload_date else None,
         "file_size": f.file_size,
@@ -195,6 +201,7 @@ def file_to_dict(f: File) -> dict:
         "summary": f.summary,
         "doc_type": f.doc_type,
         "description": f.description,
+        "dynamic_fields": f.dynamic_fields,
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
     }
@@ -234,6 +241,7 @@ async def upload_file(
     file_size: str = Form(None),
     doc_type: str = Form(None),
     description: str = Form(None),
+    dynamic_fields: str = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     background_tasks: BackgroundTasks = None
@@ -269,7 +277,7 @@ async def upload_file(
                 if ocr_text:
                     search_text = ocr_text
             if search_text and search_text.strip():
-                embedding = generate_embedding(search_text)
+                embedding = json.dumps(generate_embedding(search_text))
 
         auto_approved = current_user.role.name == "admin"
         db_file = File(
@@ -296,6 +304,7 @@ async def upload_file(
             search_text=search_text,
             summary=summary,
             embedding=embedding,
+            dynamic_fields=dynamic_fields,
         )
         db.add(db_file)
         await db.commit()
@@ -884,16 +893,36 @@ async def search_files(
                 f["snippet"] = snip
             seen_ids.add(f["id"])
 
-        # Semantic search: find top-20 similar files via vector similarity
+        # Semantic search: find top-20 similar files via cosine similarity
         try:
             from app.utils.embeddings import generate_embedding
             query_vec = generate_embedding(search)
             if query_vec:
-                from sqlalchemy import text as sqltext
-                vec_str = "'[" + ",".join(f"{v:.16f}" for v in query_vec) + "]'"
-                raw_sql = f"SELECT id FROM files WHERE embedding IS NOT NULL ORDER BY embedding <=> {vec_str}::vector LIMIT 20"
-                vec_result = await db.execute(sqltext(raw_sql))
-                vec_ids = {row[0] for row in vec_result.all()}
+                import json, math
+                # Load all embeddings from DB (stored as JSON strings in Text column)
+                all_emb_result = await db.execute(
+                    select(File.id, File.embedding).where(
+                        File.embedding.isnot(None), File.embedding != ""
+                    )
+                )
+                rows = all_emb_result.all()
+                scored = []
+                for row in rows:
+                    try:
+                        emb = json.loads(row.embedding)
+                    except Exception:
+                        continue
+                    if not emb or len(emb) != len(query_vec):
+                        continue
+                    dot = sum(a * b for a, b in zip(query_vec, emb))
+                    norm_q = math.sqrt(sum(v * v for v in query_vec))
+                    norm_e = math.sqrt(sum(v * v for v in emb))
+                    if norm_q == 0 or norm_e == 0:
+                        continue
+                    sim = dot / (norm_q * norm_e)
+                    scored.append((sim, row.id))
+                scored.sort(key=lambda x: -x[0])
+                vec_ids = {row_id for _, row_id in scored[:20]}
 
                 if vec_ids:
                     vec_files_query = select(File).options(

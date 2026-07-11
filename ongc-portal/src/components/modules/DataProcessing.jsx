@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { api } from "../../api";
 import { S, th, badge, C0 } from "../shared/styles";
 import { DonutSimple } from "../shared/Charts";
+import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
+import FileUploadForm from "../FileUploadForm";
 
 
 
@@ -21,6 +23,8 @@ export function DataProcessing({ initialTab, user, onToast }) {
   const [showExcelModal, setShowExcelModal] = useState(false);
   const [form, setForm] = useState({ section:"", project:"", volume:"", unit:"km²", progress:"", status:"Processing", due_date:"" });
   const [showForm, setShowForm] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [drillDown, setDrillDown] = useState(null);
   const canEdit = user?.role === "admin" || user?.role === "ops_manager" || user?.role === "data_creator";
 
   useEffect(() => {
@@ -56,6 +60,7 @@ export function DataProcessing({ initialTab, user, onToast }) {
     if (!form.project) { onToast?.("Project required", "error"); return; }
     const fd = new FormData();
     fd.append("section", active);
+    fd.append("dynamic_fields", JSON.stringify(form));
     Object.entries(form).forEach(([k,v]) => { if (v) fd.append(k, v); });
     await api.createDataProcessing(fd).catch(() => { onToast?.("Failed to create", "error"); return; });
     onToast?.("Record created", "success");
@@ -92,7 +97,8 @@ export function DataProcessing({ initialTab, user, onToast }) {
         <div style={S.title}>Data Processing — {active}</div>
         <div style={{display:"flex",gap:6}}>
           {canEdit && <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowForm(!showForm)}>{showForm?"Close":"+ Add"}</button>}
-          {canEdit && <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowExcelModal(true)}>📥 Excel</button>}
+          {canEdit && <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#1565c0",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowUpload(!showUpload)}>{showUpload?"Close":"📄 Upload"}</button>}
+          {canEdit && <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#2E7D32",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowExcelModal(true)}>📥 Excel</button>}
         </div>
       </div>
       <div style={{ display:"flex", gap:4, marginBottom:16, flexWrap:"wrap" }}>
@@ -101,6 +107,10 @@ export function DataProcessing({ initialTab, user, onToast }) {
         ))}
         <button style={{padding:"6px 14px",borderRadius:4,border:"1px dashed #0b3d91",cursor:"pointer",fontSize:14,color:"#0b3d91",background:"transparent"}} onClick={addTab}>+ Add</button>
       </div>
+
+      {showUpload && canEdit && (
+        <FileUploadForm user={user} section={active} onUpload={() => { load(active); setShowUpload(false); }} onToast={null} />
+      )}
 
       {showForm && canEdit ? (
         <div style={{background:"#fff",borderRadius:8,padding:"24px 32px",boxShadow:"0 1px 4px rgba(0,0,0,0.1)",maxWidth:800,margin:"0 auto"}}>
@@ -121,8 +131,8 @@ export function DataProcessing({ initialTab, user, onToast }) {
       ) : (
         <>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
-        {[["Total Projects",rows.length,C0.blue],["Completed",byStatus.Completed,C0.green],["In Progress",byStatus.Processing,C0.orange],["Avg Progress",rows.length?Math.round(rows.reduce((s,r)=>s+Number(r.progress||0),0)/rows.length)+"%":"0%",C0.teal]].map(([l,v,c])=>(
-          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+        {[["Total Projects",rows.length,C0.blue,null],["Completed",byStatus.Completed,C0.green,r=>r.status==="Completed"],["In Progress",byStatus.Processing,C0.orange,r=>r.status==="Processing"],["Avg Progress",rows.length?Math.round(rows.reduce((s,r)=>s+Number(r.progress||0),0)/rows.length)+"%":"0%",C0.teal,null]].map(([l,v,c,fl])=>(
+          <div key={l} style={{background:"#fff",borderRadius:8,padding:"12px 16px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",cursor:fl?"pointer":"default"}} onClick={()=>fl&&setDrillDown({title:l,data:rows.filter(fl).map(r=>({Project:r.project,Volume:r.volume,Status:r.status,Progress:r.progress+"%"}))})}>
             <div style={{fontSize:22,fontWeight:800,color:c}}>{v}</div>
             <div style={{fontSize:13,color:"#888",fontWeight:600,textTransform:"uppercase",marginTop:2}}>{l}</div>
           </div>
@@ -135,7 +145,7 @@ export function DataProcessing({ initialTab, user, onToast }) {
           {Object.entries(volData).length===0 ? <div style={{color:"#aaa",fontSize:12,textAlign:"center",padding:16}}>No data</div> : (
             <div>
               {Object.entries(volData).map(([k,v],i)=>(
-                <div key={i} style={{marginBottom:10}}>
+                <div key={i} style={{marginBottom:10,cursor:"pointer"}} onClick={()=>setDrillDown({title:"Project: "+k,data:rows.filter(r=>r.project===k).map(r=>({Project:r.project,Volume:r.volume,Status:r.status,Progress:r.progress+"%"}))})}>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:14,marginBottom:2}}>
                     <span style={{color:"#555",fontWeight:600}}>{k}</span>
                     <span style={{color:"#888"}}>{v} {rows[i]?.unit||""}</span>
@@ -150,7 +160,7 @@ export function DataProcessing({ initialTab, user, onToast }) {
         </div>
         <div style={S.section}>
           <div style={S.sectionTitle}>Status Distribution</div>
-          <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120}/>
+          <DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120} onClick={k=>setDrillDown({title:"Status: "+k,data:rows.filter(r=>r.status===k).map(r=>({Project:r.project,Volume:r.volume,Progress:r.progress+"%"}))})}/>
         </div>
       </div>
 
@@ -183,6 +193,7 @@ export function DataProcessing({ initialTab, user, onToast }) {
         )}
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelDataPreview} apiImport={api.excelDataImport} fields="data_processing" onSuccess={()=>{load(active)}} />
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
       </>)}
     </div>
   );

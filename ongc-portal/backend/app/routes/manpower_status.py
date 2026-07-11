@@ -44,10 +44,24 @@ async def list_items(
     q = await _scope_query(db, user, section)
     result = await db.execute(q)
     items = result.scalars().all()
-    return [{"id": x.id,             "category": x.category,             "total": x.total,             "deployed": x.deployed,             "on_leave": x.on_leave,             "training": x.training} for x in items]
+    out = []
+    for x in items:
+        d = {"id": x.id}
+        if x.dynamic_fields:
+            try:
+                df = json.loads(x.dynamic_fields)
+                d.update(df)
+                d["dynamic_fields"] = x.dynamic_fields
+            except:
+                d["dynamic_fields"] = x.dynamic_fields
+        else:
+            d.update({"category": x.category, "total": x.total, "deployed": x.deployed, "on_leave": x.on_leave, "training": x.training})
+        out.append(d)
+    return out
 
 @router.post("/create", status_code=201)
 async def create_item(
+    dynamic_fields: str = Form(None),
         category: str = Form(...),
     total: int = Form(...),
     deployed: int = Form(...),
@@ -60,7 +74,8 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = ManpowerStatus(
-                category=category,
+                dynamic_fields=dynamic_fields,
+        category=category,
         total=total,
         deployed=deployed,
         on_leave=on_leave,
@@ -75,6 +90,7 @@ async def create_item(
 @router.put("/{item_id}")
 async def update_item(
     item_id: int,
+    dynamic_fields: str = Form(None),
         category: str = Form(None),
     total: int = Form(None),
     deployed: int = Form(None),
@@ -100,6 +116,8 @@ async def update_item(
         obj.on_leave = on_leave
     if training is not None:
         obj.training = training
+    if dynamic_fields is not None:
+        obj.dynamic_fields = dynamic_fields
     await db.commit()
     return {"success": True}
 
@@ -202,7 +220,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    valid_fields = {"category","deployed","on_leave","total","training"}
+    fixed_fields = {"category","deployed","on_leave","total","training"}
     title_header = next((k for k,v in mapping_dict.items() if v=="category"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -212,13 +230,20 @@ async def excel_import(
     skipped = 0
     for r in range(2, ws.max_row + 1):
         row_data = {}
+        dynamic_vals = {}
         has_data = False
         for col_name, field_name in mapping_dict.items():
-            if col_name in col_idx and field_name in valid_fields:
-                val = ws.cell(row=r, column=col_idx[col_name] + 1).value
-                if val is not None:
-                    row_data[field_name] = str(val).strip()
-                    has_data = True
+            if col_name not in col_idx:
+                continue
+            val = ws.cell(row=r, column=col_idx[col_name] + 1).value
+            if val is None:
+                continue
+            if field_name in fixed_fields:
+                row_data[field_name] = str(val).strip()
+                has_data = True
+            else:
+                dynamic_vals[field_name] = str(val).strip()
+                has_data = True
         if not has_data:
             continue
         item_name = row_data.get("category", f"Imported-{r}")
@@ -226,11 +251,12 @@ async def excel_import(
             skipped += 1
             continue
         obj = ManpowerStatus(
-                        category=row_data.get("category"),
+            category=row_data.get("category"),
             total=row_data.get("total"),
             deployed=row_data.get("deployed"),
             on_leave=row_data.get("on_leave"),
             training=row_data.get("training"),
+            dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )
         db.add(obj)

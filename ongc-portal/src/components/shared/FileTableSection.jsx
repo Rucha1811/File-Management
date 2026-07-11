@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { api } from "../../api";
 import { S, badge, C0 } from "./styles";
 import { DonutSimple, COL0 } from "./Charts";
+import { DrillDownModal } from "./DrillDownModal";
 
 export function FileTableSection({ section, projectName, version = 0 }) {
   const [files, setFiles] = useState([]);
@@ -86,6 +87,13 @@ export function FileTableSection({ section, projectName, version = 0 }) {
     return va < vb ? -1*d : va > vb ? 1*d : 0;
   });
 
+  const [drillDown, setDrillDown] = useState(null);
+
+  const drillFiles = (key, filterFn) => {
+    const rows = files.filter(filterFn).map(f => ({ Name: f.file_name, Type: f.file_type, Section: f.section, Category: f.category, Classification: f.classification, Status: f.status, Season: f.season }));
+    setDrillDown({ title: key, data: rows });
+  };
+
   const byCategory = files.reduce((a,x)=>{const c=x.category||"Uncategorized";a[c]=(a[c]||0)+1;return a;},{});
   const byType = files.reduce((a,x)=>{const t=x.file_type||"Unknown";a[t]=(a[t]||0)+1;return a;},{});
   const byStatus = {Approved:files.filter(x=>x.status==="Approved").length,Pending:files.filter(x=>x.status==="Pending").length,Rejected:files.filter(x=>x.status==="Rejected").length};
@@ -101,18 +109,18 @@ export function FileTableSection({ section, projectName, version = 0 }) {
     <div style={S.section}>
       <div style={S.sectionTitle}>Uploaded Files ({files.length})</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
-        {[["Total Files",files.length,C0.blue],["Approved",byStatus.Approved,C0.green],["Pending",byStatus.Pending,C0.orange],["Rejected",byStatus.Rejected,C0.red]].map(([l,v,c])=>(
-          <div key={l} style={{background:"#f9fafb",borderRadius:8,padding:"10px 16px",textAlign:"center"}}>
+        {[["Total Files", files.length, C0.blue, null], ["Approved", byStatus.Approved, C0.green, f => f.status==="Approved"], ["Pending", byStatus.Pending, C0.orange, f => f.status==="Pending"], ["Rejected", byStatus.Rejected, C0.red, f => f.status==="Rejected"]].map(([l,v,c,filter])=>(
+          <div key={l} style={{background:"#f9fafb",borderRadius:8,padding:"10px 16px",textAlign:"center",cursor:filter?"pointer":"default"}} onClick={() => filter && drillFiles(l, filter)}>
             <div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div>
             <div style={{fontSize:13,color:"#888",fontWeight:600,textTransform:"uppercase",marginTop:2}}>{l}</div>
           </div>
         ))}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Files by Category</div><DonutSimple data={byCategory} colors={COL0} size={120}/></div>
-        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Status Distribution</div><DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120}/></div>
-        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Files by Type</div><DonutSimple data={byType} colors={COL0} size={120}/></div>
-        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Classification Breakdown</div><DonutSimple data={byClassification} colors={COL0} size={120}/></div>
+        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Files by Category</div><DonutSimple data={byCategory} colors={COL0} size={120} onClick={(k) => drillFiles(k, f => (f.category||"Uncategorized") === k)}/></div>
+        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Status Distribution</div><DonutSimple data={byStatus} colors={[C0.green,C0.orange,C0.red]} size={120} onClick={(k) => drillFiles(k, f => f.status === k)}/></div>
+        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Files by Type</div><DonutSimple data={byType} colors={COL0} size={120} onClick={(k) => drillFiles(k, f => (f.file_type||"Unknown") === k)}/></div>
+        <div><div style={{fontSize:15,fontWeight:600,color:"#333",marginBottom:8}}>Classification Breakdown</div><DonutSimple data={byClassification} colors={COL0} size={120} onClick={(k) => drillFiles(k, f => (f.classification||"Unclassified") === k)}/></div>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
         <input style={{...S.input,width:200,fontSize:16}} placeholder="Keyword / semantic search…" value={f.search}
@@ -201,6 +209,7 @@ export function FileTableSection({ section, projectName, version = 0 }) {
           </table>
         </div>
       )}
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
     </div>
   );
 }

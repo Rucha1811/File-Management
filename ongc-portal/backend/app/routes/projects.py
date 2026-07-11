@@ -16,15 +16,11 @@ def _match_section(section: str, area_filter: str) -> bool:
     if not area_filter:
         return False
     parts = area_filter.split("/")
-    first = parts[0].strip()
-    prefix = ""
-    if first.startswith("GP-"):
-        prefix = "GP-"
     for p in parts:
         p = p.strip()
         if p == section:
             return True
-        if prefix and not p.startswith(prefix) and prefix + p == section:
+        if section.startswith(p + "-") or p.startswith(section + "-"):
             return True
     return False
 
@@ -124,6 +120,15 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db), user:
     p = result.scalar_one_or_none()
     if not p:
         raise HTTPException(404, "Project not found")
+    role_name = user.role.name if user.role else "viewer"
+    if role_name not in ("admin", "ops_manager"):
+        match = False
+        if p.section and user.area and _match_section(p.section, user.area):
+            match = True
+        elif p.section and user.section and p.section == user.section:
+            match = True
+        if not match:
+            raise HTTPException(403, "You do not have access to this project")
     events_result = await db.execute(select(ProjectEvent).where(ProjectEvent.project_id == project_id).order_by(ProjectEvent.event_date))
     events = [{"event_date": str(e.event_date), "description": e.description} for e in events_result.scalars().all()]
     docs_result = await db.execute(select(ProjectDocument).where(ProjectDocument.project_id == project_id))
@@ -313,7 +318,7 @@ async def upload_project_file(
     user: User = Depends(get_current_user),
 ):
     role_name = user.role.name if user.role else "viewer"
-    if role_name not in ("admin", "ops_manager"):
+    if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="You do not have permission to upload files")
     result = await db.execute(select(Project).where(Project.id == project_id))
     p = result.scalar_one_or_none()

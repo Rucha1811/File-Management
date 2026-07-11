@@ -121,17 +121,18 @@ function GroupedBar({ data, labels, groups, colors, height=160 }) {
   const maxVal = Math.max(...Object.values(data), 1);
   const groupW = 56;
   const barW = Math.max(10, (groupW - 8) / groups.length);
+  const labelH = 20;
   return (
     <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"center", gap:2, height, overflowX:"auto", padding:"0 4px 20px" }}>
       {labels.map((label, li) => (
         <div key={label} style={{ display:"flex", flexDirection:"column", alignItems:"center", width:groupW, minWidth:groupW }}>
-          <div style={{ display:"flex", gap:1, alignItems:"flex-end", height:height-20 }}>
+          <div style={{ display:"flex", gap:1, alignItems:"flex-end", height:height-labelH, paddingTop:labelH }}>
             {groups.map((g, vi) => {
               const v = data[`${label}_${g}`] || 0;
-              const h = Math.max((v / maxVal) * (height - 20), 2);
+              const h = Math.max((v / maxVal) * (height - labelH - labelH), 2);
               return (
                 <div key={g} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                  <div style={{ fontSize:9, fontWeight:700, color:colors[vi], marginBottom:1 }}>{v}</div>
+                  <div style={{ fontSize:11, fontWeight:700, color:colors[vi], marginBottom:2, lineHeight:1.2 }}>{v}</div>
                   <div style={{ width:barW, height:h, background:colors[vi], borderRadius:"3px 3px 0 0", transition:"height 0.4s" }} />
                 </div>
               );
@@ -157,6 +158,9 @@ export default function SmartDashboard({ user, onToast }) {
   const [drillDown, setDrillDown] = useState(null);
   const [s2Monthly, setS2Monthly] = useState(null);
   const [s2Yearly, setS2Yearly] = useState(null);
+  const [berProjects, setBerProjects] = useState([]);
+  const [berSelectedProjects, setBerSelectedProjects] = useState([]);
+  const [berAllRecords, setBerAllRecords] = useState([]);
 
   const isAdmin = role === "admin";
   const isOps = role === "ops_manager";
@@ -171,7 +175,8 @@ export default function SmartDashboard({ user, onToast }) {
       api.listFiles(),
       api.stage2Monthly(),
       api.stage2Yearly(),
-    ]).then(([s, h, all, s2m, s2y]) => {
+      api.stage2Targets(),
+    ]).then(([s, h, all, s2m, s2y, s2t]) => {
       setStats(s || { total:0, pending:0, approved:0, rejected:0, bySection:{}, byClassification:{}, byType:{} });
       setHighlights(h || []);
       const norm = (all || []).map(f => ({
@@ -188,10 +193,24 @@ export default function SmartDashboard({ user, onToast }) {
       setMyFiles(norm.filter(f => f.uploadedBy === user.id));
       setS2Monthly(s2m || {});
       setS2Yearly(s2y || { be:{target:0,achieved:0}, re:{target:0,achieved:0} });
+      setBerProjects([...new Set((s2t||[]).map(t => t.project_name).filter(Boolean))].sort());
+      setBerAllRecords(s2t || []);
     }).catch(() => {
       setStats({ total:0, pending:0, approved:0, rejected:0, bySection:{}, byClassification:{}, byType:{} });
+      setHighlights([]);
+      setMyFiles([]);
+      setS2Monthly({});
+      setS2Yearly({ be:{target:0,achieved:0}, re:{target:0,achieved:0} });
+      setBerProjects([]);
+      setBerAllRecords([]);
     }).finally(() => setLoading(false));
   }, [user.id]);
+
+  const toggleBerProject = (pn) => {
+    setBerSelectedProjects(prev =>
+      prev.includes(pn) ? prev.filter(x => x !== pn) : [...prev, pn]
+    );
+  };
 
   if (loading) return <Spinner />;
 
@@ -225,49 +244,167 @@ export default function SmartDashboard({ user, onToast }) {
       )}
 
       {/* ── BE/RE Targets & Achievement (Stage-II) ── */}
-      {s2Monthly && !isViewer && (
+      {!isViewer && (s2Monthly || berAllRecords.length > 0) && (() => {
+        const rawMonths = ["apr","may","jun","jul","aug","sep","oct","nov","dec","jan","feb","mar"];
+        const activeProjects = berSelectedProjects;
+        const records = activeProjects.length ? berAllRecords.filter(r => activeProjects.includes(r.project_name)) : berAllRecords;
+        // compute aggregated monthly/yearly from selected records
+        const compMonthly = {};
+        const compYearly = { be:{target:0,achieved:0}, re:{target:0,achieved:0} };
+        records.forEach(rec => {
+          const pfx = rec.type === "BE" ? "be" : "re";
+          rawMonths.forEach((m, i) => {
+            if (!compMonthly[MONTHS[i]]) compMonthly[MONTHS[i]] = { be_target:0, be_achieved:0, re_target:0, re_achieved:0 };
+            compMonthly[MONTHS[i]][pfx + "_target"] += Number(rec[m]||0);
+            compMonthly[MONTHS[i]][pfx + "_achieved"] += Number(rec[m + "_ach"]||0);
+          });
+          compYearly[pfx].target += Number(rec.total||0);
+          compYearly[pfx].achieved += Number(rec.total_ach||0);
+        });
+        const cm = Object.keys(compMonthly).length ? compMonthly : s2Monthly;
+        const cy = Object.keys(compYearly.be).length ? compYearly : s2Yearly;
+        // per-project computed data for comparison
+        const projData = activeProjects.length >= 2 ? activeProjects.map(pn => {
+          const recs = berAllRecords.filter(r => r.project_name === pn);
+          const pm = {}; const py = { be:{target:0,achieved:0}, re:{target:0,achieved:0} };
+          recs.forEach(rec => {
+            const pfx = rec.type === "BE" ? "be" : "re";
+            rawMonths.forEach((m, i) => {
+              if (!pm[MONTHS[i]]) pm[MONTHS[i]] = { be_target:0, be_achieved:0, re_target:0, re_achieved:0 };
+              pm[MONTHS[i]][pfx + "_target"] += Number(rec[m]||0);
+              pm[MONTHS[i]][pfx + "_achieved"] += Number(rec[m + "_ach"]||0);
+            });
+            py[pfx].target += Number(rec.total||0);
+            py[pfx].achieved += Number(rec.total_ach||0);
+          });
+          return { project: pn, monthly: pm, yearly: py };
+        }) : [];
+        return (
         <div style={S.section}>
           <div style={{ fontSize:15, fontWeight:700, color:"#0b3d91", marginBottom:12 }}>BE & RE Targets & Achievement</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            <div>
-              <div style={{ fontSize:13, fontWeight:600, color:"#1565C0", marginBottom:6 }}>BE — Monthly Target vs Achievement</div>
-              <div style={{ overflowX:"auto", paddingBottom:4 }}>
-                <GroupedBar
-                  data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, s2Monthly[m]?.be_target||0], [`${m}_Achieved`, s2Monthly[m]?.be_achieved||0]]))}
-                  labels={MONTHS} groups={["Target","Achieved"]} colors={["#1565C0","#2E7D32"]} height={150} />
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize:13, fontWeight:600, color:"#E65100", marginBottom:6 }}>RE — Monthly Target vs Achievement</div>
-              <div style={{ overflowX:"auto", paddingBottom:4 }}>
-                <GroupedBar
-                  data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, s2Monthly[m]?.re_target||0], [`${m}_Achieved`, s2Monthly[m]?.re_achieved||0]]))}
-                  labels={MONTHS} groups={["Target","Achieved"]} colors={["#E65100","#2E7D32"]} height={150} />
-              </div>
-            </div>
+          {/* ── project selectors ── */}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:14 }}>
+            <select style={{ padding:"8px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:14, background:"#fff", minWidth:220 }} value={activeProjects[0]||""} onChange={e => {
+              const v = e.target.value;
+              if (!v) setBerSelectedProjects([]);
+              else setBerSelectedProjects([v]);
+            }}>
+              <option value="">— All Projects —</option>
+              {berProjects.map(pn => <option key={pn} value={pn}>{pn}</option>)}
+            </select>
+            {activeProjects[0] && (
+              <select style={{ padding:"8px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:14, background:"#fff", minWidth:220 }} value={activeProjects[1]||""} onChange={e => {
+                const v = e.target.value;
+                if (!v) setBerSelectedProjects([activeProjects[0]]);
+                else setBerSelectedProjects([activeProjects[0], v]);
+              }}>
+                <option value="">+ Compare with…</option>
+                {berProjects.filter(pn => pn !== activeProjects[0]).map(pn => <option key={pn} value={pn}>{pn}</option>)}
+              </select>
+            )}
+            {activeProjects.length >= 2 && (
+              <select style={{ padding:"8px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:14, background:"#fff", minWidth:220 }} value={activeProjects[2]||""} onChange={e => {
+                const v = e.target.value;
+                if (!v) setBerSelectedProjects([activeProjects[0], activeProjects[1]]);
+                else setBerSelectedProjects([activeProjects[0], activeProjects[1], v]);
+              }}>
+                <option value="">+ Compare with…</option>
+                {berProjects.filter(pn => !activeProjects.includes(pn)).map(pn => <option key={pn} value={pn}>{pn}</option>)}
+              </select>
+            )}
+            {activeProjects.length > 0 && (
+              <button style={{ padding:"6px 12px", border:"1px solid #e0e0e0", borderRadius:6, background:"#f5f5f5", cursor:"pointer", fontSize:13 }} onClick={() => setBerSelectedProjects([])}>Clear</button>
+            )}
+            {berProjects.length === 0 && <span style={{ fontSize:12, color:"#aaa" }}>No project data.</span>}
           </div>
-          {s2Yearly && (
-            <div style={{ display:"flex", gap:12, marginTop:10, flexWrap:"wrap", justifyContent:"center" }}>
-              <div style={{ padding:"8px 14px", background:"#e3f2fd", borderRadius:6, textAlign:"center", minWidth:100 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:"#1565C0" }}>BE Target</div>
-                <div style={{ fontSize:20, fontWeight:800, color:"#1565C0" }}>{s2Yearly.be?.target || 0}</div>
+          {/* ── aggregate charts (none or single project) ── */}
+          {activeProjects.length < 2 && cm && (
+            <>
+              <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#1565C0", marginBottom:6 }}>BE — Monthly Target vs Achievement</div>
+                  <div style={{ overflowX:"auto", paddingBottom:4 }}>
+                    <GroupedBar
+                      data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, cm[m]?.be_target||0], [`${m}_Achieved`, cm[m]?.be_achieved||0]]))}
+                      labels={MONTHS} groups={["Target","Achieved"]} colors={["#1565C0","#2E7D32"]} height={150} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#E65100", marginBottom:6 }}>RE — Monthly Target vs Achievement</div>
+                  <div style={{ overflowX:"auto", paddingBottom:4 }}>
+                    <GroupedBar
+                      data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, cm[m]?.re_target||0], [`${m}_Achieved`, cm[m]?.re_achieved||0]]))}
+                      labels={MONTHS} groups={["Target","Achieved"]} colors={["#E65100","#2E7D32"]} height={150} />
+                  </div>
+                </div>
               </div>
-              <div style={{ padding:"8px 14px", background:"#e8f5e9", borderRadius:6, textAlign:"center", minWidth:100 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:"#2E7D32" }}>BE Achieved</div>
-                <div style={{ fontSize:20, fontWeight:800, color:"#2E7D32" }}>{s2Yearly.be?.achieved || 0}</div>
+              {cy && (
+                <div style={{ display:"flex", gap:12, marginTop:10, flexWrap:"wrap", justifyContent:"center" }}>
+                  <div style={{ padding:"8px 14px", background:"#e3f2fd", borderRadius:6, textAlign:"center", minWidth:100, cursor:"pointer" }} onClick={() => setDrillDown({title:"BE Target", data:[{Type:"BE", Target:cy.be?.target||0, Achieved:cy.be?.achieved||0}]})}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#1565C0" }}>BE Target</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:"#1565C0" }}>{cy.be?.target || 0}</div>
+                  </div>
+                  <div style={{ padding:"8px 14px", background:"#e8f5e9", borderRadius:6, textAlign:"center", minWidth:100, cursor:"pointer" }} onClick={() => setDrillDown({title:"BE Achieved", data:[{Type:"BE", Achieved:cy.be?.achieved||0}]})}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#2E7D32" }}>BE Achieved</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:"#2E7D32" }}>{cy.be?.achieved || 0}</div>
+                  </div>
+                  <div style={{ padding:"8px 14px", background:"#fff3e0", borderRadius:6, textAlign:"center", minWidth:100, cursor:"pointer" }} onClick={() => setDrillDown({title:"RE Target", data:[{Type:"RE", Target:cy.re?.target||0, Achieved:cy.re?.achieved||0}]})}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#E65100" }}>RE Target</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:"#E65100" }}>{cy.re?.target || 0}</div>
+                  </div>
+                  <div style={{ padding:"8px 14px", background:"#fce4ec", borderRadius:6, textAlign:"center", minWidth:100, cursor:"pointer" }} onClick={() => setDrillDown({title:"RE Achieved", data:[{Type:"RE", Achieved:cy.re?.achieved||0}]})}>
+                    <div style={{ fontSize:11, fontWeight:600, color:"#c62828" }}>RE Achieved</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:"#c62828" }}>{cy.re?.achieved || 0}</div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* ── comparison view for 2+ projects ── */}
+          {activeProjects.length >= 2 && projData.map(pd => (
+            <div key={pd.project} style={{ marginBottom:20, border:"1px solid #e8edf2", borderRadius:8, padding:16 }}>
+              <div style={{ fontSize:14, fontWeight:700, color:"#0b3d91", marginBottom:10 }}>{pd.project}</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:600, color:"#1565C0", marginBottom:4 }}>BE — Monthly Target vs Achievement</div>
+                  <div style={{ overflowX:"auto", paddingBottom:4 }}>
+                    <GroupedBar
+                      data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, pd.monthly[m]?.be_target||0], [`${m}_Achieved`, pd.monthly[m]?.be_achieved||0]]))}
+                      labels={MONTHS} groups={["Target","Achieved"]} colors={["#1565C0","#2E7D32"]} height={120} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:600, color:"#E65100", marginBottom:4 }}>RE — Monthly Target vs Achievement</div>
+                  <div style={{ overflowX:"auto", paddingBottom:4 }}>
+                    <GroupedBar
+                      data={Object.fromEntries(MONTHS.flatMap(m => [[`${m}_Target`, pd.monthly[m]?.re_target||0], [`${m}_Achieved`, pd.monthly[m]?.re_achieved||0]]))}
+                      labels={MONTHS} groups={["Target","Achieved"]} colors={["#E65100","#2E7D32"]} height={120} />
+                  </div>
+                </div>
               </div>
-              <div style={{ padding:"8px 14px", background:"#fff3e0", borderRadius:6, textAlign:"center", minWidth:100 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:"#E65100" }}>RE Target</div>
-                <div style={{ fontSize:20, fontWeight:800, color:"#E65100" }}>{s2Yearly.re?.target || 0}</div>
-              </div>
-              <div style={{ padding:"8px 14px", background:"#fce4ec", borderRadius:6, textAlign:"center", minWidth:100 }}>
-                <div style={{ fontSize:11, fontWeight:600, color:"#c62828" }}>RE Achieved</div>
-                <div style={{ fontSize:20, fontWeight:800, color:"#c62828" }}>{s2Yearly.re?.achieved || 0}</div>
+              <div style={{ display:"flex", gap:8, marginTop:8, flexWrap:"wrap" }}>
+                <div style={{ padding:"6px 12px", background:"#e3f2fd", borderRadius:5, textAlign:"center", minWidth:80 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:"#1565C0" }}>BE Target</div>
+                  <div style={{ fontSize:17, fontWeight:800, color:"#1565C0" }}>{pd.yearly.be?.target||0}</div>
+                </div>
+                <div style={{ padding:"6px 12px", background:"#e8f5e9", borderRadius:5, textAlign:"center", minWidth:80 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:"#2E7D32" }}>BE Ach.</div>
+                  <div style={{ fontSize:17, fontWeight:800, color:"#2E7D32" }}>{pd.yearly.be?.achieved||0}</div>
+                </div>
+                <div style={{ padding:"6px 12px", background:"#fff3e0", borderRadius:5, textAlign:"center", minWidth:80 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:"#E65100" }}>RE Target</div>
+                  <div style={{ fontSize:17, fontWeight:800, color:"#E65100" }}>{pd.yearly.re?.target||0}</div>
+                </div>
+                <div style={{ padding:"6px 12px", background:"#fce4ec", borderRadius:5, textAlign:"center", minWidth:80 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:"#c62828" }}>RE Ach.</div>
+                  <div style={{ fontSize:17, fontWeight:800, color:"#c62828" }}>{pd.yearly.re?.achieved||0}</div>
+                </div>
               </div>
             </div>
-          )}
+          ))}
         </div>
-      )}
+        );
+      })()}
 
       {highlights.length > 0 && !isViewer && (
         <div style={S.section}>
@@ -313,7 +450,7 @@ export default function SmartDashboard({ user, onToast }) {
         </div>
       )}
 
-      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.rows} onClose={() => setDrillDown(null)} />}
+      {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data || drillDown.rows} onClose={() => setDrillDown(null)} />}
     </div>
   );
 }
