@@ -59,10 +59,10 @@ export default function ProjectCreation({ user, onToast }) {
   const [kmlFile, setKmlFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [showExcelModal, setShowExcelModal] = useState(false);
   const [projectFiles, setProjectFiles] = useState([]);
   const [allFiles, setAllFiles] = useState([]);
   const [pFilter, setPFilter] = useState({ season:"", category:"", status:"", type:"", search:"", section:"", sortBy:"" });
+  const [showExcelModal, setShowExcelModal] = useState(false);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -283,6 +283,7 @@ export default function ProjectCreation({ user, onToast }) {
           <div style={S.title}>Projects</div>
           <div style={{display:"flex",gap:8}}>
             {canCreate && <button style={{ ...S.btn, background:"#0b3d91", color:"#fff" }} onClick={openForm}>+ Create New Project</button>}
+            {canCreate && <button style={{ ...S.btn, background:"#2e7d32", color:"#fff" }} onClick={()=>setShowExcelModal(true)}>📥 Excel</button>}
           </div>
         </div>
 
@@ -373,17 +374,8 @@ export default function ProjectCreation({ user, onToast }) {
           </>
         )}
       </div>
+      <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelPreview} apiImport={api.excelImport} fields="project" onSuccess={()=>{fetchProjects()}} />
 
-      {/* ─── EXCEL UPLOAD MODAL ─── */}
-      <ExcelUploadModal
-        show={showExcelModal}
-        onClose={() => setShowExcelModal(false)}
-        onToast={onToast}
-        apiPreview={api.excelPreview}
-        apiImport={api.excelImport}
-        fields="project"
-        onSuccess={() => { fetchProjects(); }}
-      />
       </>
     );
   }

@@ -66,18 +66,17 @@ const MENU = [
   { label:"Highlights", page:"highlights", roles:["admin","ops_manager"], levels:[2,3] },
   { label:"Share Point (Temporary File)", page:"sharepoint", roles:["admin","ops_manager"], levels:[2,3] },
   { label:"Reports", submenu: [
+    "Monthly",
+    "Quarterly",
+    "Half-Yearly",
+    "Fortnight",
+    "DO Report",
+    "Consolidated Financial",
     "Progress Report",
     "Technical Report",
-    { label:"Currently Available Reports", children: [
-      "Monthly",
-      "Quarterly",
-      "Half-Yearly",
-      "Fortnight",
-      "DO Report",
-      "Consolidated Financial",
-    ]},
   ], roles:["admin","ops_manager","data_creator","viewer"], levels:[2,3,4] },
   { label:"Report Builder", page:"report-builder", roles:["admin","ops_manager"], levels:[2,3] },
+  { label:"My Reports / Forms", page:"my-reports", roles:["data_creator","viewer"], levels:[2,3,4] },
   { label:"Activity Analytics", page:"activity-analytics", roles:["admin","ops_manager","data_creator","viewer"], levels:[0,2,3,4] },
   { label:"Users", page:"users", roles:["admin"], levels:[2] },
          { label:"Access Permissions", page:"access-permissions", roles:["admin"], levels:[2] },
@@ -301,6 +300,25 @@ function LoginPage({ onLogin }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [footOpen, setFootOpen] = useState(false);
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    api.listUsersPublic().then(d => setUsers(Array.isArray(d) ? d : [])).catch(() => setUsers([]));
+  }, []);
+
+  const userGroups = users.reduce((acc, u) => {
+    const role = u.role || "viewer";
+    if (!acc[role]) acc[role] = [];
+    acc[role].push(u);
+    return acc;
+  }, {});
+
+  const roleConfig = {
+    admin: { label:"Admin — full access", color:"#B71C1C", key:"Admin" },
+    ops_manager: { label:"Ops Managers — manage their allocated areas", color:"#E65100", key:"Ops Mgrs" },
+    data_creator: { label:"Data Creators", color:"#1B5E20", key:"Data Creators" },
+    viewer: { label:"Viewers (read-only access)", color:"#1565c0", key:"Viewers" },
+  };
 
   const handle = async () => {
     if (!cpf || !pwd) { setErr("Please enter CPF and password."); return; }
@@ -369,105 +387,82 @@ function LoginPage({ onLogin }) {
         </div>
         <div style={{ background:"#fff", borderRadius:8, padding:20, marginBottom:20 }}>
           <h3 style={{ margin:"0 0 12px 0", color:"#0b3d91", fontSize:15 }}>Test Accounts — click any to auto-fill</h3>
-          {[
-            { label:"Admin — full access", color:"#B71C1C", users:[
-              {cpf:"100001",pw:"admin123",name:"Sh. Sandip Kumar Kaur",area:"All",cat:"—",om:"—"},
-              {cpf:"100005",pw:"admin123",name:"Rucha",area:"All",cat:"—",om:"—"},
-            ]},
-            { label:"Ops Managers — manage their allocated areas", color:"#E65100", users:[
-              {cpf:"100002",pw:"admin123",name:"Rajiv Sharma",area:"Operations",cat:"—",om:"—"},
-              {cpf:"100018",pw:"admin123",name:"Sanjay Gupta",area:"GP-03/06/15/16/36/61/81",cat:"—",om:"—"},
-              {cpf:"100019",pw:"admin123",name:"Ravi Agarwal",area:"REL/RCC/HSE/Contracts",cat:"—",om:"—"},
-              {cpf:"100027",pw:"admin123",name:"Vikas Sharma",area:"GP-03/06 (Ahmedabad)",cat:"—",om:"—"},
-              {cpf:"100050",pw:"admin123",name:"Anil Kapoor",area:"GP-61/81 (Ankleshwar)",cat:"—",om:"—"},
-              {cpf:"100051",pw:"admin123",name:"Sunil Dutt",area:"GP-15/16 (Mehsana)",cat:"—",om:"—"},
-              {cpf:"100052",pw:"admin123",name:"Rajendra Singh",area:"GP-36 (Rajasthan)",cat:"—",om:"—"},
-            ]},
-            { label:"Data Creators — under Sanjay Gupta (GP Sections)", color:"#1B5E20", users:[
-              {cpf:"100003",pw:"admin123",name:"Mahavir Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100006",pw:"admin123",name:"Anil Verma",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100030",pw:"admin123",name:"Amit Kumar",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100007",pw:"admin123",name:"Vikram Singh",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
-              {cpf:"100008",pw:"admin123",name:"Rakesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
-              {cpf:"100009",pw:"admin123",name:"Suresh Nair",area:"GP-16",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Valod"},
-              {cpf:"100010",pw:"admin123",name:"Meena Joshi",area:"GP-61",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Ankleshwar"},
-              {cpf:"100011",pw:"admin123",name:"Deepak Yadav",area:"GP-81",cat:"Well Data",om:"Sanjay Gupta",loc:"Cambay"},
-              {cpf:"100031",pw:"admin123",name:"Sunita Devi",area:"GP-03",cat:"Well Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100032",pw:"admin123",name:"Rajesh Verma",area:"GP-15",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Mehsana"},
-            ]},
-            { label:"Data Creators — under Ravi Agarwal (Support Services)", color:"#1B5E20", users:[
-              {cpf:"100012",pw:"admin123",name:"Pooja Sharma",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100033",pw:"admin123",name:"Neelam Joshi",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100013",pw:"admin123",name:"Manoj Tiwari",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100034",pw:"admin123",name:"Vijay Patil",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100014",pw:"admin123",name:"Sunil Kumar",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100035",pw:"admin123",name:"Anita Sharma",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Ankleshwar"},
-              {cpf:"100015",pw:"admin123",name:"Arjun Mehta",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Ahmedabad"},
-              {cpf:"100036",pw:"admin123",name:"Rohit Singh",area:"Contracts",cat:"Contracts",om:"Ravi Agarwal",loc:"Vadodara"},
-            ]},
-            { label:"Data Creators — under Vikas Sharma (Ahmedabad)", color:"#2E7D32", users:[
-              {cpf:"100023",pw:"admin123",name:"Hemant Desai",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
-              {cpf:"100037",pw:"admin123",name:"Suresh Rathod",area:"GP-06",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
-            ]},
-            { label:"Data Creators — under Anil Kapoor (Ankleshwar)", color:"#2E7D32", users:[
-              {cpf:"100024",pw:"admin123",name:"Prakash Nair",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
-              {cpf:"100038",pw:"admin123",name:"Geeta Reddy",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
-            ]},
-            { label:"Data Creators — under Sunil Dutt (Mehsana)", color:"#2E7D32", users:[
-              {cpf:"100025",pw:"admin123",name:"Dinesh Patel",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
-              {cpf:"100039",pw:"admin123",name:"Mohan Lal",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
-            ]},
-            { label:"Data Creators — under Rajendra Singh (Rajasthan)", color:"#2E7D32", users:[
-              {cpf:"100026",pw:"admin123",name:"Kamla Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
-              {cpf:"100040",pw:"admin123",name:"Shanti Devi",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Jaisalmer"},
-            ]},
-            { label:"Viewers (read-only access)", color:"#1565c0", users:[
-              {cpf:"100004",pw:"admin123",name:"Priya Patel",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100020",pw:"admin123",name:"Neha Kapoor",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100021",pw:"admin123",name:"Rahul Bose",area:"GP-03",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Jambusar"},
-              {cpf:"100041",pw:"admin123",name:"Kavita Singh",area:"GP-36",cat:"Seismic Data",om:"Sanjay Gupta",loc:"Linch"},
-              {cpf:"100042",pw:"admin123",name:"Arun Kumar",area:"GP-06",cat:"Well Data",om:"Sanjay Gupta",loc:"Gandhar"},
-              {cpf:"100022",pw:"admin123",name:"Karan Mehta",area:"REL",cat:"Legal",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100043",pw:"admin123",name:"Divya Sharma",area:"RCC",cat:"Accounts",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100044",pw:"admin123",name:"Pankaj Jain",area:"HSE",cat:"HSE",om:"Ravi Agarwal",loc:"Vadodara"},
-              {cpf:"100028",pw:"admin123",name:"Sanjay Mehta",area:"GP-03",cat:"Seismic Data",om:"Vikas Sharma",loc:"Ahmedabad"},
-              {cpf:"100029",pw:"admin123",name:"Rohan Joshi",area:"GP-61",cat:"Well Data",om:"Anil Kapoor",loc:"Ankleshwar"},
-              {cpf:"100045",pw:"admin123",name:"Megha Desai",area:"GP-15",cat:"Seismic Data",om:"Sunil Dutt",loc:"Mehsana"},
-              {cpf:"100046",pw:"admin123",name:"Ravi Raj",area:"GP-36",cat:"Seismic Data",om:"Rajendra Singh",loc:"Barmer"},
-            ]},
-          ].map(group => (
-            <div key={group.label} style={{ marginBottom:12 }}>
-              <div style={{ fontWeight:700, fontSize:13, color:group.color, marginBottom:6 }}>{group.label}</div>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
-                <thead>
-                  <tr style={{ background:"#f4f6f9" }}>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Name</th>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Section</th>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Category</th>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Location</th>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Ops Mgr</th>
-                    <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Credentials</th>
-                    <th style={{ padding:"4px 8px", width:50 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.users.map(u => (
-                    <tr key={u.cpf} style={{ borderTop:"1px solid #eee" }}>
-                      <td style={{ padding:"4px 8px", fontWeight:600, color:"#333" }}>{u.name}</td>
-                      <td style={{ padding:"4px 8px", color:"#666" }}>{u.area || "—"}</td>
-                      <td style={{ padding:"4px 8px", color:"#666" }}>{u.cat || "—"}</td>
-                      <td style={{ padding:"4px 8px", color:"#888", fontSize:11 }}>{u.loc || "—"}</td>
-                      <td style={{ padding:"4px 8px", color:"#888", fontSize:11 }}>{u.om || "—"}</td>
-                      <td style={{ padding:"4px 8px", color:"#888", fontFamily:"monospace", fontSize:11 }}>{u.cpf}/{u.pw}</td>
-                      <td style={{ padding:"4px 8px" }}>
-                        <button type="button" style={{ padding:"2px 10px", fontSize:10, background:group.color, color:"#fff", border:"none", borderRadius:3, cursor:"pointer", fontWeight:600 }} onClick={()=>{setCpf(u.cpf);setPwd(u.pw);}}>Use</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+          {(users.length === 0)
+            ? <div style={{ color:"#888", fontSize:13, padding:8 }}>Loading accounts…</div>
+            : <>
+                {Object.entries(roleConfig).flatMap(([roleName, cfg]) => {
+                  if (roleName === "data_creator") {
+                    const dcUsers = userGroups["data_creator"] || [];
+                    const grouped = {};
+                    dcUsers.forEach(u => {
+                      const om = u.ops_manager_name || "Unassigned";
+                      if (!grouped[om]) grouped[om] = [];
+                      grouped[om].push(u);
+                    });
+                    return Object.entries(grouped).map(([om, ulist]) => (
+                      <div key={om} style={{ marginBottom:12 }}>
+                        <div style={{ fontWeight:700, fontSize:13, color:cfg.color, marginBottom:6 }}>Data Creators — under {om}</div>
+                        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                          <thead>
+                            <tr style={{ background:"#f4f6f9" }}>
+                              <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Name</th>
+                              <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Section</th>
+                              <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Category</th>
+                              <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Ops Mgr</th>
+                              <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Credentials</th>
+                              <th style={{ padding:"4px 8px", width:50 }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {ulist.map(u => (
+                              <tr key={u.cpf} style={{ borderTop:"1px solid #eee" }}>
+                                <td style={{ padding:"4px 8px", fontWeight:600, color:"#333" }}>{u.name}</td>
+                                <td style={{ padding:"4px 8px", color:"#666" }}>{u.area || "—"}</td>
+                                <td style={{ padding:"4px 8px", color:"#666" }}>{u.user_category || "—"}</td>
+                                <td style={{ padding:"4px 8px", color:"#888", fontSize:11 }}>{u.ops_manager_name || "—"}</td>
+                                <td style={{ padding:"4px 8px", color:"#888", fontFamily:"monospace", fontSize:11 }}>{u.cpf}/admin123</td>
+                                <td style={{ padding:"4px 8px" }}>
+                                  <button type="button" style={{ padding:"2px 10px", fontSize:10, background:cfg.color, color:"#fff", border:"none", borderRadius:3, cursor:"pointer", fontWeight:600 }} onClick={()=>{setCpf(u.cpf);setPwd("admin123");}}>Use</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ));
+                  }
+                  const roleUsers = userGroups[roleName] || [];
+                  if (roleUsers.length === 0) return [];
+                  return (
+                    <div key={roleName} style={{ marginBottom:12 }}>
+                      <div style={{ fontWeight:700, fontSize:13, color:cfg.color, marginBottom:6 }}>{cfg.label}</div>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                        <thead>
+                          <tr style={{ background:"#f4f6f9" }}>
+                            <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Name</th>
+                            <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Section / Area</th>
+                            <th style={{ textAlign:"left", padding:"4px 8px", fontWeight:600, color:"#555" }}>Credentials</th>
+                            <th style={{ padding:"4px 8px", width:50 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {roleUsers.map(u => (
+                            <tr key={u.cpf} style={{ borderTop:"1px solid #eee" }}>
+                              <td style={{ padding:"4px 8px", fontWeight:600, color:"#333" }}>{u.name}</td>
+                              <td style={{ padding:"4px 8px", color:"#666" }}>{u.area || "—"}</td>
+                              <td style={{ padding:"4px 8px", color:"#888", fontFamily:"monospace", fontSize:11 }}>{u.cpf}/admin123</td>
+                              <td style={{ padding:"4px 8px" }}>
+                                <button type="button" style={{ padding:"2px 10px", fontSize:10, background:cfg.color, color:"#fff", border:"none", borderRadius:3, cursor:"pointer", fontWeight:600 }} onClick={()=>{setCpf(u.cpf);setPwd("admin123");}}>Use</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </>
+          }
         </div>
         <div style={{ width:"100%", maxWidth:540, margin:"0 auto" }}>
           <h2 style={{ textAlign:"center", color:"#0b3d91", marginBottom:16, fontSize:18 }}>Office Gallery</h2>
@@ -2029,6 +2024,7 @@ export default function App() {
       case "tech-reports": return <TechnicalReports user={user} onToast={showToast} />;
       case "sharepoint": return <SharePointTemp user={user} onToast={showToast} />;
       case "report-builder": return <ReportBuilder user={user} onToast={showToast} />;
+      case "my-reports": return <ReportBuilder user={user} onToast={showToast} defaultTab="fill" />;
       case "requests": return <Requests user={user} onToast={showToast} />;
       case "share-knowledge": return <ShareKnowledge user={user} onToast={showToast} />;
 
@@ -2045,14 +2041,7 @@ export default function App() {
                   if (item.label === "Reports") {
                     if (child === "Progress Report") return <ProgressReport user={user} onToast={showToast} />;
                     if (child === "Technical Report") return <TechnicalReports user={user} onToast={showToast} />;
-                    if (child.label === "Currently Available Reports") return <ReportingAppraisals initialTab="Monthly" user={user} onToast={showToast} />;
-                  }
-                }
-              } else if (child.children) {
-                for (const gc of child.children) {
-                  const key = `${item.label}-${child.label}-${gc.replace(/\s+/g,"-")}`;
-                  if (page === key) {
-                    if (item.label === "Reports" && child.label === "Currently Available Reports") return <ReportingAppraisals key={gc} initialTab={gc} user={user} onToast={showToast} />;
+                    return <ReportingAppraisals key={child} initialTab={child} user={user} onToast={showToast} />;
                   }
                 }
               }

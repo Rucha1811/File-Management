@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
-from app.routes import auth, users, files, approvals, dashboard, reports, notifications, database, permissions, lookup as lookup_routes, ai as ai_routes, activity, projects, targets, highlights, technical_reports, report_builder, progress_reports, manpower_status, contract_status, fund_management, data_processing, regional_lab, reporting_appraisals, pending_issues, hse_incidents, awp_items, requests, knowledge, acquisition_targets, contract_summary
+from app.routes import auth, users, files, approvals, dashboard, reports, notifications, database, permissions, lookup as lookup_routes, ai as ai_routes, activity, projects, targets, highlights, technical_reports, report_builder, progress_reports, manpower_status, contract_status, fund_management, data_processing, regional_lab, reporting_appraisals, pending_issues, hse_incidents, awp_items, requests, knowledge, acquisition_targets, contract_summary, hse_certificates, hse_audits, system_config, sharepoint
 from app.models.base import Base
 from app.database import engine
 from app.ai.vector_store import vector_store
@@ -76,9 +76,13 @@ app.include_router(regional_lab.router, prefix="/api/regional-lab", tags=["regio
 app.include_router(reporting_appraisals.router, prefix="/api/reporting-appraisals", tags=["reporting-appraisals"])
 app.include_router(pending_issues.router, prefix="/api/pending-issues", tags=["pending-issues"])
 app.include_router(hse_incidents.router, prefix="/api/hse-incidents", tags=["hse-incidents"])
+app.include_router(hse_certificates.router, prefix="/api/hse-certificates", tags=["hse-certificates"])
+app.include_router(hse_audits.router, prefix="/api/hse-audits", tags=["hse-audits"])
+app.include_router(system_config.router, prefix="/api/system-config", tags=["system-config"])
 app.include_router(awp_items.router, prefix="/api/awp-items", tags=["awp-items"])
 
 app.include_router(requests.router, prefix="/api/requests", tags=["Requests"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["Knowledge"])
 app.include_router(acquisition_targets.router, prefix="/api/stage2", tags=["Stage-II DataVision"])
 app.include_router(contract_summary.router, prefix="/api/contract-summary", tags=["contract-summary"])
+app.include_router(sharepoint.router, prefix="/api/sharepoint", tags=["sharepoint"])

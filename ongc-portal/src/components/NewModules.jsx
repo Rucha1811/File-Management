@@ -461,9 +461,11 @@ function MiniUpload({ user, fields, section, onUpload, onToast }) {
       fd.append("classification", classification || "General / Available for All");
       fd.append("doc_type", docType);
       fd.append("description", description);
+      const dynFields = {};
       for (const k of Object.keys(fields)) {
-        if (vals[k]) fd.append(k, vals[k]);
+        if (vals[k]) dynFields[k] = vals[k];
       }
+      fd.append("dynamic_fields", JSON.stringify(dynFields));
       await api.uploadFile(fd);
       toast("Uploaded successfully", "success");
       setFile(null);

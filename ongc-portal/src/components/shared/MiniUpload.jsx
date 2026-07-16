@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../../api";
+import { getCanonicalPageName } from "../ExcelUploadModal";
 
 export function MiniUpload({ user, section, page, onUpload, onToast }) {
   const [file, setFile] = useState(null);
@@ -18,11 +19,12 @@ export function MiniUpload({ user, section, page, onUpload, onToast }) {
 
   useEffect(() => {
     if (!pageName) return;
-    api.listPageFields(pageName).then(f => {
+    const lookupPage = getCanonicalPageName(pageName);
+    api.listPageFields(lookupPage).then(f => {
       setFields(f);
       const sel = f.filter(x => x.field_type === "select").map(x => x.field_name);
       if (sel.length) {
-        Promise.all(sel.map(t => api.getLookups(t, pageName).then(d => [t, d]).catch(() => [t, []]))).then(entries => {
+        Promise.all(sel.map(t => api.getLookups(t, lookupPage).then(d => [t, d]).catch(() => [t, []]))).then(entries => {
           setOptions(Object.fromEntries(entries));
         });
       }

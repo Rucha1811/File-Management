@@ -11,14 +11,22 @@ from io import BytesIO
 
 router = APIRouter()
 
-COLUMN_SYNONYMS = {'date': ['date', 'incident date', 'occurred on', 'event date'], 'incident_type': ['incident type', 'incident_type', 'type', 'category', 'classification'], 'location': ['location', 'place', 'area', 'site', 'section'], 'description': ['description', 'details', 'narrative', 'report'], 'action_taken': ['action taken', 'action_taken', 'corrective action', 'resolution', 'action']}
+COLUMN_SYNONYMS = {
+    'date': ['date', 'incident date', 'occurred on', 'event date'],
+    'incident_type': ['incident type', 'incident_type', 'type', 'category', 'classification'],
+    'location': ['location', 'place', 'area', 'site', 'section'],
+    'description': ['description', 'details', 'narrative', 'report'],
+    'action_taken': ['action taken', 'action_taken', 'corrective action', 'resolution', 'action'],
+    'severity': ['severity', 'level', 'criticality', 'impact'],
+    'status': ['status', 'state', 'incident status'],
+}
 
 def _norm_hdr(s):
     s = s.strip().lower()
     s = re.sub(r'\s+', ' ', s)
     for field, syns in COLUMN_SYNONYMS.items():
         for syn in syns:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
 
@@ -55,18 +63,29 @@ async def list_items(
             except:
                 d["dynamic_fields"] = x.dynamic_fields
         else:
-            d.update({"date": str(x.date) if x.date else None, "incident_type": x.incident_type, "location": x.location, "description": x.description, "action_taken": x.action_taken})
+            d["dynamic_fields"] = None
+        d.update({
+            "date": str(x.date) if x.date else None,
+            "incident_type": x.incident_type,
+            "location": x.location,
+            "description": x.description,
+            "action_taken": x.action_taken,
+            "severity": x.severity,
+            "status": x.status or "Open",
+        })
         out.append(d)
     return out
 
 @router.post("/create", status_code=201)
 async def create_item(
     dynamic_fields: str = Form(None),
-        date: str = Form(None),
+    date: str = Form(None),
     incident_type: str = Form(None),
     location: str = Form(None),
     description: str = Form(None),
     action_taken: str = Form(None),
+    severity: str = Form(None),
+    status: str = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -74,12 +93,14 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = HSEIncident(
-                dynamic_fields=dynamic_fields,
+        dynamic_fields=dynamic_fields,
         date=date_type.fromisoformat(date) if date else None,
         incident_type=incident_type,
         location=location,
         description=description,
         action_taken=action_taken,
+        severity=severity,
+        status=status or "Open",
         created_by=user.id,
     )
     db.add(obj)
@@ -91,11 +112,13 @@ async def create_item(
 async def update_item(
     item_id: int,
     dynamic_fields: str = Form(None),
-        date: str = Form(None),
+    date: str = Form(None),
     incident_type: str = Form(None),
     location: str = Form(None),
     description: str = Form(None),
     action_taken: str = Form(None),
+    severity: str = Form(None),
+    status: str = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -107,7 +130,7 @@ async def update_item(
     if not obj:
         raise HTTPException(404, "hse incident not found")
     if date is not None:
-        obj.date = date_type.fromisoformat(date)
+        obj.date = date_type.fromisoformat(date) if date else None
     if incident_type is not None:
         obj.incident_type = incident_type
     if location is not None:
@@ -116,6 +139,10 @@ async def update_item(
         obj.description = description
     if action_taken is not None:
         obj.action_taken = action_taken
+    if severity is not None:
+        obj.severity = severity
+    if status is not None:
+        obj.status = status
     if dynamic_fields is not None:
         obj.dynamic_fields = dynamic_fields
     await db.commit()
@@ -220,7 +247,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    fixed_fields = {"action_taken","date","description","incident_type","location"}
+    fixed_fields = {"action_taken", "date", "description", "incident_type", "location", "severity", "status"}
     title_header = next((k for k,v in mapping_dict.items() if v=="description"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -239,10 +266,10 @@ async def excel_import(
             if val is None:
                 continue
             if field_name in fixed_fields:
-                row_data[field_name] = str(val).strip()
+                row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
             else:
-                dynamic_vals[field_name] = str(val).strip()
+                dynamic_vals[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
         if not has_data:
             continue
@@ -256,6 +283,8 @@ async def excel_import(
             location=row_data.get("location"),
             description=row_data.get("description"),
             action_taken=row_data.get("action_taken"),
+            severity=row_data.get("severity"),
+            status=row_data.get("status", "Open"),
             dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )

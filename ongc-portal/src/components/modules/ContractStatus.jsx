@@ -12,18 +12,6 @@ const BTN = {
   fontWeight: 600,
 };
 
-const OVERLAY = {
-  position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-  background: "rgba(0,0,0,0.5)", display: "flex",
-  alignItems: "center", justifyContent: "center", zIndex: 1000,
-};
-
-const MODAL = {
-  background: "#fff", borderRadius: 12, padding: 28, minWidth: 700,
-  maxWidth: "90vw", maxHeight: "85vh", overflow: "auto",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
-};
-
 const styles = {
   summaryTable: (compact) => ({
     width: "100%", borderCollapse: "collapse",
@@ -41,11 +29,7 @@ const styles = {
   tdLabel: { padding: "8px 12px", fontWeight: 600, textAlign: "left", border: "1px solid #e0e0e0", background: "#f8f9fa" },
   card: {
     background: "#fff", borderRadius: 10, padding: "20px 24px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: 24,
-  },
-  cardHeader: {
-    display: "flex", justifyContent: "space-between",
-    alignItems: "center", marginBottom: 16,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
   },
 };
 
@@ -54,6 +38,20 @@ const BUDGET_HEADS = [
   "Stores",
   "Spares",
   "Contractual",
+];
+
+function generateContractFYList() {
+  const fys = [];
+  for (let y = 3000; y >= 1950; y--) {
+    fys.push(`${y}-${String(y + 1).slice(-2)}`);
+  }
+  return fys;
+}
+const CONTRACT_FY_OPTIONS = generateContractFYList();
+
+const FISCAL_MONTHS_CONTRACT = [
+  "April","May","June","July","August","September",
+  "October","November","December","January","February","March"
 ];
 
 const BUDGET_COLS = [
@@ -258,15 +256,31 @@ function AcqEditForm({ data, onChange }) {
   );
 }
 
+const LEFT_MENU = [
+  { key: "budget", label: "Budget vs Utilization" },
+  { key: "acquisition", label: "Acquisition Cost" },
+  { key: "records", label: "Contract / Tendering Records" },
+];
+
 export function ContractStatus({ user, onToast }) {
+  const [activeSection, setActiveSection] = useState("budget");
   const [budgetData, setBudgetData] = useState(null);
   const [acqData, setAcqData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editType, setEditType] = useState(null);
+  const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState(null);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [financialYear, setFinancialYear] = useState("2025-26");
+
+  const currentFYDefault = (() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    return m >= 3 ? `${y}-${String(y + 1).slice(-2)}` : `${y - 1}-${String(y).slice(-2)}`;
+  })();
+
+  const [financialYear, setFinancialYear] = useState(currentFYDefault);
+  const [selectedMonth, setSelectedMonth] = useState("All");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -286,27 +300,28 @@ export function ContractStatus({ user, onToast }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const openEdit = (type) => {
-    if (type === "budget_utilization") {
+  const openEditor = () => {
+    if (activeSection === "budget") {
       setEditData(budgetData ? { ...budgetData.data } : { rows: emptyBudgetRows() });
       setEditId(budgetData ? budgetData.id : null);
-    } else {
+    } else if (activeSection === "acquisition") {
       setEditData(acqData ? { ...acqData.data } : { sections: ACQ_SECTIONS, rows: emptyAcqRows() });
       setEditId(acqData ? acqData.id : null);
     }
-    setEditType(type);
+    setEditing(true);
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const type = activeSection === "budget" ? "budget_utilization" : "acquisition_cost";
       if (editId) {
         await api.updateContractSummary(editId, editData);
       } else {
-        await api.createContractSummary(editType, financialYear, editData);
+        await api.createContractSummary(type, financialYear, editData);
       }
       if (onToast) onToast("Saved successfully", "success");
-      setEditType(null);
+      setEditing(false);
       await fetchData();
     } catch (e) {
       if (onToast) onToast(e.message, "error");
@@ -315,124 +330,166 @@ export function ContractStatus({ user, onToast }) {
     }
   };
 
-  return (
-    <div style={S.page}>
-      <div style={{ ...styles.card, marginBottom: 16, display: "flex", alignItems: "center", gap: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 20, color: "#1a3a5c" }}>Contract Status Dashboard</h2>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: 14, fontWeight: 600, color: "#555" }}>Financial Year:</label>
-          <select
-            value={financialYear}
-            onChange={(e) => setFinancialYear(e.target.value)}
-            style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #ccc", fontSize: 14 }}
-          >
-            <option>2024-25</option>
-            <option>2025-26</option>
-            <option>2026-27</option>
-          </select>
-        </div>
-      </div>
+  const renderContent = () => {
+    if (loading) {
+      return <div style={{ textAlign: "center", padding: 40, color: "#888" }}>Loading...</div>;
+    }
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#888" }}>Loading...</div>
-      ) : (
+    if (activeSection === "budget") {
+      return (
         <>
-          {/* Budget vs Utilization */}
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <h3 style={{ margin: 0, color: "#1a3a5c" }}>Budget vs Utilization (Amount in Crores)</h3>
-              <button
-                onClick={() => openEdit("budget_utilization")}
-                style={{ ...BTN, background: "#1a3a5c", color: "#fff" }}
-              >
-                {budgetData ? "Edit" : "Add Data"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ margin: 0, color: "#1a3a5c" }}>Budget vs Utilization (Amount in Crores)</h3>
+            {!editing && (
+              <button onClick={openEditor} style={{ ...BTN, background: "#1a3a5c", color: "#fff" }}>
+                {budgetData ? "Edit Data" : "Add Data"}
               </button>
-            </div>
-            {budgetData ? (
-              <BudgetTable data={budgetData.data} />
-            ) : (
-              <p style={{ color: "#999", fontStyle: "italic" }}>
-                No budget utilization data for {financialYear}. Click "Add Data" to create it.
-              </p>
             )}
           </div>
-
-          {/* Acquisition Cost */}
-          <div style={styles.card}>
-            <div style={styles.cardHeader}>
-              <h3 style={{ margin: 0, color: "#1a3a5c" }}>Seismic Acquisition Cost (₹ in Lakh)</h3>
-              <button
-                onClick={() => openEdit("acquisition_cost")}
-                style={{ ...BTN, background: "#1a3a5c", color: "#fff" }}
-              >
-                {acqData ? "Edit" : "Add Data"}
-              </button>
-            </div>
-            {acqData ? (
-              <AcqCostTable data={acqData.data} />
-            ) : (
-              <p style={{ color: "#999", fontStyle: "italic" }}>
-                No acquisition cost data for {financialYear}. Click "Add Data" to create it.
-              </p>
-            )}
-          </div>
-
-          {/* Edit Modal */}
-          {editType && (
-            <div style={OVERLAY} onClick={() => !saving && setEditType(null)}>
-              <div style={MODAL} onClick={(e) => e.stopPropagation()}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <h3 style={{ margin: 0, color: "#1a3a5c" }}>
-                    {editType === "budget_utilization" ? "Budget vs Utilization" : "Seismic Acquisition Cost"} — {financialYear}
-                  </h3>
-                  <button onClick={() => setEditType(null)} style={{ ...BTN, background: "#e0e0e0", color: "#333" }}>
-                    Cancel
-                  </button>
-                </div>
-
-                <div style={{ maxHeight: "55vh", overflow: "auto" }}>
-                  {editType === "budget_utilization" ? (
-                    <BudgetEditForm data={editData} onChange={setEditData} />
-                  ) : (
-                    <AcqEditForm data={editData} onChange={setEditData} />
-                  )}
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20, gap: 8 }}>
-                  <button onClick={() => setEditType(null)} style={{ ...BTN, background: "#e0e0e0", color: "#333" }}>
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    style={{ ...BTN, background: "#1a3a5c", color: "#fff", opacity: saving ? 0.6 : 1 }}
-                  >
-                    {saving ? "Saving..." : "Save"}
-                  </button>
-                </div>
+          {editing ? (
+            <>
+              <BudgetEditForm data={editData} onChange={setEditData} />
+              <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+                <button onClick={() => setEditing(false)} style={{ ...BTN, background: "#e0e0e0", color: "#333" }}>Cancel</button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ ...BTN, background: "#1a3a5c", color: "#fff", opacity: saving ? 0.6 : 1 }}>
+                  {saving ? "Saving..." : "Save"}
+                </button>
               </div>
-            </div>
+            </>
+          ) : budgetData ? (
+            <BudgetTable data={budgetData.data} />
+          ) : (
+            <p style={{ color: "#999", fontStyle: "italic" }}>
+              No budget utilization data for {financialYear}. Click "Add Data" to create it.
+            </p>
           )}
         </>
-      )}
+      );
+    }
 
-      {/* Individual Contract Records */}
-      <div style={styles.card}>
-        <h3 style={{ margin: "0 0 16px 0", color: "#1a3a5c" }}>Contract / Tendering Records</h3>
-        <DynamicCRUD
-          page="Contract Status"
-          title="Contract / Tendering Status"
-          apiList={api.listContractStatus}
-          apiCreate={api.createContractStatus}
-          apiUpdate={api.updateContractStatus}
-          apiDelete={api.deleteContractStatus}
-          apiExcelPreview={api.excelContractPreview}
-          apiExcelImport={api.excelContractImport}
-          excelFields="contract_status"
-          uploadSection="Contract / Tendering Status"
-          user={user}
-          onToast={onToast}
-        />
+    if (activeSection === "acquisition") {
+      return (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h3 style={{ margin: 0, color: "#1a3a5c" }}>Seismic Acquisition Cost (₹ in Lakh)</h3>
+            {!editing && (
+              <button onClick={openEditor} style={{ ...BTN, background: "#1a3a5c", color: "#fff" }}>
+                {acqData ? "Edit Data" : "Add Data"}
+              </button>
+            )}
+          </div>
+          {editing ? (
+            <>
+              <AcqEditForm data={editData} onChange={setEditData} />
+              <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+                <button onClick={() => setEditing(false)} style={{ ...BTN, background: "#e0e0e0", color: "#333" }}>Cancel</button>
+                <button onClick={handleSave} disabled={saving}
+                  style={{ ...BTN, background: "#1a3a5c", color: "#fff", opacity: saving ? 0.6 : 1 }}>
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </>
+          ) : acqData ? (
+            <AcqCostTable data={acqData.data} />
+          ) : (
+            <p style={{ color: "#999", fontStyle: "italic" }}>
+              No acquisition cost data for {financialYear}. Click "Add Data" to create it.
+            </p>
+          )}
+        </>
+      );
+    }
+
+    if (activeSection === "records") {
+      return (
+        <>
+          <h3 style={{ margin: "0 0 8px 0", color: "#1a3a5c" }}>Contract / Tendering Records</h3>
+          {selectedMonth !== "All" && (
+            <div style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+              Showing contracts for <strong>{financialYear}</strong> — <strong>{selectedMonth}</strong>
+            </div>
+          )}
+          <DynamicCRUD
+            page="Contract Status"
+            title="Contract / Tendering Records"
+            apiList={api.listContractStatus}
+            apiCreate={api.createContractStatus}
+            apiUpdate={api.updateContractStatus}
+            apiDelete={api.deleteContractStatus}
+            apiExcelPreview={api.excelContractPreview}
+            apiExcelImport={api.excelContractImport}
+            excelFields="contract_status"
+            uploadSection="Contract & Tendering"
+            user={user}
+            onToast={onToast}
+            extraFilters={{ fy: financialYear, month: selectedMonth !== "All" ? selectedMonth : undefined }}
+          />
+        </>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 0, minHeight: "calc(100vh - 80px)" }}>
+      {/* Left side menu */}
+      <div style={{
+        width: 220, minWidth: 220, background: "#1a3a5c",
+        borderRadius: "10px 0 0 10px", padding: "16px 0",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{ padding: "8px 16px 16px", borderBottom: "1px solid rgba(255,255,255,0.15)", marginBottom: 8 }}>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Contract</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>Management</div>
+        </div>
+        {LEFT_MENU.map(item => (
+          <button
+            key={item.key}
+            onClick={() => { setActiveSection(item.key); setEditing(false); }}
+            style={{
+              display: "block", width: "100%", textAlign: "left", padding: "10px 16px",
+              border: "none", cursor: "pointer", fontSize: 14, fontWeight: 500,
+              background: activeSection === item.key ? "rgba(255,255,255,0.15)" : "transparent",
+              color: activeSection === item.key ? "#fff" : "rgba(255,255,255,0.7)",
+              borderLeft: activeSection === item.key ? "3px solid #4fc3f7" : "3px solid transparent",
+              transition: "all 0.2s",
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Right content panel */}
+      <div style={{ flex: 1, padding: "20px 24px", background: "#f0f2f5", borderRadius: "0 10px 10px 0" }}>
+        <div style={{ ...styles.card, marginBottom: 16, display: "flex", alignItems: "center", gap: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 20, color: "#1a3a5c" }}>Contract Status Dashboard</h2>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#555" }}>Financial Year:</label>
+            <select
+              value={financialYear}
+              onChange={(e) => setFinancialYear(e.target.value)}
+              style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #ccc", fontSize: 14 }}
+            >
+              {CONTRACT_FY_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#555" }}>Month:</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #ccc", fontSize: 14 }}
+            >
+              <option value="All">All Months</option>
+              {FISCAL_MONTHS_CONTRACT.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={styles.card}>
+          {renderContent()}
+        </div>
       </div>
     </div>
   );

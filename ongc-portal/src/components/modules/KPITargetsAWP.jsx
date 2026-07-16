@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "../../api";
 import { S, th, td, C2 } from "../shared/styles";
 import { DrillDownModal } from "../shared/DrillDownModal";
+import ExcelUploadModal from "../ExcelUploadModal";
 
 const MONTHS = ["apr","may","jun","jul","aug","sep","oct","nov","dec","jan","feb","mar"];
 const MONTH_LABELS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
@@ -288,6 +289,7 @@ export function KPITargetsAWP({ user, onToast }) {
   const [awpFieldOpts, setAwpFieldOpts] = useState({});
   const [awpValues, setAwpValues] = useState({});
   const [showAwpForm, setShowAwpForm] = useState(false);
+  const [showExcelModal, setShowExcelModal] = useState(false);
   const [awpSaving, setAwpSaving] = useState(false);
   const [awpEditingId, setAwpEditingId] = useState(null);
   const [isApprovedEdit, setIsApprovedEdit] = useState(false);
@@ -623,6 +625,17 @@ export function KPITargetsAWP({ user, onToast }) {
           </div>
         </div>
 
+        {/* FY filter — always visible at top */}
+        <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <label style={{fontSize:13,fontWeight:600,color:"#555"}}>Financial Year:</label>
+            <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=overviewFy.match(/^(\d{4})/);if(m){const n=Number(m[1])-1;const fy=`${n}-${String(n+1).slice(2)}`;setOverviewFy(fy);setBerForm(p=>({...p,financial_year:fy,editing:null,...emptyMonthly()}));if(berForm.project_name)loadBerRecord(berForm.project_name,berForm.type,fy);}}}>◀</button>
+            <input style={{width:100,padding:"6px 8px",border:"1px solid #d0d5dd",borderRadius:6,fontSize:14,textAlign:"center",fontWeight:600}} value={overviewFy} onChange={e=>{const fy=e.target.value;setOverviewFy(fy);setBerForm(p=>({...p,financial_year:fy,editing:null,...emptyMonthly()}));if(berForm.project_name)loadBerRecord(berForm.project_name,berForm.type,fy);}} placeholder="YYYY-YY" />
+            <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=overviewFy.match(/^(\d{4})/);if(m){const n=Number(m[1])+1;const fy=`${n}-${String(n+1).slice(2)}`;setOverviewFy(fy);setBerForm(p=>({...p,financial_year:fy,editing:null,...emptyMonthly()}));if(berForm.project_name)loadBerRecord(berForm.project_name,berForm.type,fy);}}}>▶</button>
+          </div>
+          <span style={{fontSize:12,color:"#aaa"}}>Filter all targets and overview by financial year</span>
+        </div>
+
         {/* Project + BE/RE selector row */}
         <div style={{display:"flex",gap:12,alignItems:"end",flexWrap:"wrap",marginBottom:16}}>
           <div style={S.field}>
@@ -652,69 +665,9 @@ export function KPITargetsAWP({ user, onToast }) {
                   >RE</button>
                 </div>
               </div>
-              <div style={S.field}>
-                <label style={S.label}>FY</label>
-                <div style={{display:"flex",alignItems:"center",gap:4}}>
-                  <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>shiftFY(-1)} title="Previous Year">◀</button>
-                  <input style={{...S.input,width:90,textAlign:"center",fontSize:13,padding:"4px 6px"}} value={berForm.financial_year} onChange={e=>{const fy=e.target.value; setBerForm(p=>({...p,financial_year:fy,editing:null,...emptyMonthly()})); loadBerRecord(berForm.project_name, berForm.type, fy);}} placeholder="YYYY-YY" />
-                  <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>shiftFY(1)} title="Next Year">▶</button>
-                </div>
-              </div>
             </>
           )}
         </div>
-
-        {/* Projects Overview when no project selected */}
-        {!berForm.project_name && (() => {
-          const fyFilter = overviewFy;
-          const filteredBer = berData.filter(d => !fyFilter || d.financial_year === fyFilter);
-          const counts = projects.filter(p=>p.survey_type).map(p => {
-            const pt = filteredBer.filter(d => d.project_name === p.project_name);
-            return { ...p, be: pt.filter(d=>d.type==="BE").length, re: pt.filter(d=>d.type==="RE").length, total: pt.length };
-          });
-          return (
-            <div style={{marginBottom:16}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                <div style={{fontSize:14,fontWeight:600,color:C2.dark}}>Projects Overview <span style={{fontSize:12,fontWeight:400,color:"#888"}}>({counts.length} projects)</span></div>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <label style={{fontSize:12,color:"#666"}}>FY:</label>
-                  <input style={{width:90,padding:"4px 6px",border:"1px solid #ccc",borderRadius:4,fontSize:12,textAlign:"center"}} value={overviewFy} onChange={e=>setOverviewFy(e.target.value)} placeholder="YYYY-YY" />
-                  <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=overviewFy.match(/^(\d{4})/);if(m){const n=Number(m[1])-1;setOverviewFy(`${n}-${String(n+1).slice(2)}`)}}}>◀</button>
-                  <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=overviewFy.match(/^(\d{4})/);if(m){const n=Number(m[1])+1;setOverviewFy(`${n}-${String(n+1).slice(2)}`)}}}>▶</button>
-                </div>
-              </div>
-              <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead>
-                    <tr style={{background:"#f0f4ff"}}>
-                      <th style={th}>Project</th>
-                      <th style={th}>Type</th>
-                      <th style={th}>Basin</th>
-                      <th style={th}>BE</th>
-                      <th style={th}>RE</th>
-                      <th style={th}>Total</th>
-                      <th style={th}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {counts.map(p => (
-                      <tr key={p.id} style={{borderBottom:"1px solid #f0f0f0"}}>
-                        <td style={td}>{p.project_name}</td>
-                        <td style={td}>{surveyTypeMap[p.survey_type] || p.survey_type || "—"}</td>
-                        <td style={td}>{p.area_name || "—"}</td>
-                        <td style={td}><span style={{background:p.be?"#e3f2fd":"#f5f5f5",color:p.be?"#1565c0":"#bbb",padding:"2px 8px",borderRadius:4,fontWeight:600,fontSize:11}}>{p.be || "0"}</span></td>
-                        <td style={td}><span style={{background:p.re?"#fce4ec":"#f5f5f5",color:p.re?"#c62828":"#bbb",padding:"2px 8px",borderRadius:4,fontWeight:600,fontSize:11}}>{p.re || "0"}</span></td>
-                        <td style={td}><span style={{fontWeight:600}}>{p.total}</span></td>
-                        <td style={td}><button style={{fontSize:11,padding:"2px 10px",border:"none",borderRadius:3,background:"#1565c0",color:"#fff",cursor:"pointer"}} onClick={()=>handleBerProjectChange(String(p.id))}>Select</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {berLoading && <div style={{fontSize:12,color:"#888",marginTop:8}}>Loading targets...</div>}
-            </div>
-          );
-        })()}
 
         {/* Monthly form */}
         {berForm.project_name && (
@@ -910,9 +863,14 @@ export function KPITargetsAWP({ user, onToast }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{fontSize:16,fontWeight:700,color:C2.dark}}>AWP Items</div>
           {canEdit && (
-            <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowAwpForm(!showAwpForm)}>
-              {showAwpForm ? (awpEditingId ? "Cancel" : "Close") : "+ Add AWP Item"}
-            </button>
+            <>
+              <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowAwpForm(!showAwpForm)}>
+                {showAwpForm ? (awpEditingId ? "Cancel" : "Close") : "+ Add AWP Item"}
+              </button>
+              <button style={{padding:"5px 12px",border:"none",borderRadius:4,background:"#0b3d91",color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer"}} onClick={()=>setShowExcelModal(true)}>
+                📥 Excel
+              </button>
+            </>
           )}
         </div>
 
@@ -1028,6 +986,7 @@ export function KPITargetsAWP({ user, onToast }) {
         api={api}
       />}
       {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
+      <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelAWPPreview} apiImport={api.excelAWPImport} fields="awp_item" onSuccess={()=>{loadAwp()}} />
     </div>
   );
 }

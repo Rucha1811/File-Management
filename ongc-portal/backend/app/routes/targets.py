@@ -12,11 +12,20 @@ router = APIRouter()
 
 TARGET_COLUMN_SYNONYMS = {
     "title": ["title", "target", "kpi", "goal", "name", "indicator"],
-    "target_value": ["target value", "value", "target_value", "goal value", "target", "numeric value"],
+    "target_value": ["target value", "value", "target_value", "goal value", "numeric value"],
     "unit": ["unit", "units", "measurement", "uom"],
     "section": ["section", "gp", "gp code", "department", "division"],
     "fiscal_year": ["fiscal year", "year", "financial year", "fy", "fiscal_year"],
     "description": ["description", "desc", "notes", "remarks", "comment"],
+}
+
+TARGET_FIELD_LABELS = {
+    "title": "Target / KPI Title",
+    "target_value": "Target Value",
+    "unit": "Unit",
+    "section": "Section / GP",
+    "fiscal_year": "Fiscal Year",
+    "description": "Description / Remarks",
 }
 
 def _normalize_header(col, syn_map):
@@ -24,9 +33,18 @@ def _normalize_header(col, syn_map):
     s = re.sub(r'\s+', ' ', s)
     for field, synonyms in syn_map.items():
         for syn in synonyms:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
+
+@router.get("/excel-fields")
+async def get_excel_fields(user: User = Depends(get_current_user)):
+    """Return all importable target fields with labels, for the Excel column mapping UI."""
+    return [
+        {"field_name": field, "label": TARGET_FIELD_LABELS.get(field, field.replace("_", " ").title())}
+        for field in TARGET_FIELD_LABELS
+    ]
+
 
 @router.get("/")
 async def list_targets(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -243,7 +261,7 @@ async def target_excel_import(
             if col_name in col_idx and field_name in valid_fields:
                 val = ws.cell(row=r, column=col_idx[col_name] + 1).value
                 if val is not None:
-                    row_data[field_name] = str(val).strip()
+                    row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                     if field_name == "title":
                         has_data = True
         if not has_data:

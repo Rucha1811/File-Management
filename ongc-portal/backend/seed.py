@@ -384,16 +384,24 @@ async def seed():
     await db.commit()
 
     CONTRACTS = [
-        {"contract":"Seismic Survey CB-ONHP-2022/1","vendor":"M/s GeoSearch Ltd","value":"₹2.4 Cr","award_date":"2024-08-15","completion_date":"2025-06-30","status":"Ongoing","cpf":"100003"},
-        {"contract":"Data Processing Jambusar","vendor":"M/s DataWave Inc","value":"₹1.8 Cr","award_date":"2024-09-01","completion_date":"2025-05-15","status":"Ongoing","cpf":"100003"},
-        {"contract":"VSP Equipment Supply","vendor":"M/s WellTech Corp","value":"₹75 L","award_date":"2024-11-01","completion_date":"2025-02-28","status":"Completed","cpf":"100003"},
-        {"contract":"Consultancy for 2D Kutch","vendor":"M/s GeoVista Consultancy","value":"₹50 L","award_date":"2025-01-10","completion_date":"2025-12-31","status":"Ongoing","cpf":"100001"},
+        {"contract":"Seismic Survey CB-ONHP-2022/1","vendor":"M/s GeoSearch Ltd","value":"₹2.4 Cr","award_date":"2024-08-15","completion_date":"2025-06-30","status":"Ongoing","cpf":"100003","fy":"2025-26","month":"April"},
+        {"contract":"Data Processing Jambusar","vendor":"M/s DataWave Inc","value":"₹1.8 Cr","award_date":"2024-09-01","completion_date":"2025-05-15","status":"Ongoing","cpf":"100003","fy":"2025-26","month":"April"},
+        {"contract":"VSP Equipment Supply","vendor":"M/s WellTech Corp","value":"₹75 L","award_date":"2024-11-01","completion_date":"2025-02-28","status":"Completed","cpf":"100003","fy":"2025-26","month":"May"},
+        {"contract":"Consultancy for 2D Kutch","vendor":"M/s GeoVista Consultancy","value":"₹50 L","award_date":"2025-01-10","completion_date":"2025-12-31","status":"Ongoing","cpf":"100001","fy":"2025-26","month":"June"},
+        {"contract":"3D Seismic GP-03 Block","vendor":"M/s SurveyTech India","value":"₹3.1 Cr","award_date":"2024-07-01","completion_date":"2025-03-31","status":"Ongoing","cpf":"100006","fy":"2025-26","month":"April"},
+        {"contract":"Well Logging Services GP-06","vendor":"M/s WellLog Pro","value":"₹1.2 Cr","award_date":"2024-10-15","completion_date":"2025-04-30","status":"Ongoing","cpf":"100007","fy":"2025-26","month":"July"},
+        {"contract":"Seismic Data Processing GP-15","vendor":"M/s GeoCompute Ltd","value":"₹85 L","award_date":"2024-12-01","completion_date":"2025-08-31","status":"Ongoing","cpf":"100008","fy":"2025-26","month":"May"},
+        {"contract":"Field Equipment Rental GP-61","vendor":"M/s EquipRent Corp","value":"₹45 L","award_date":"2025-02-01","completion_date":"2025-09-30","status":"Ongoing","cpf":"100010","fy":"2025-26","month":"August"},
+        {"contract":"GPS Survey GP-81 Block","vendor":"M/s GeoPos Solutions","value":"₹30 L","award_date":"2025-03-01","completion_date":"2025-07-31","status":"Ongoing","cpf":"100011","fy":"2025-26","month":"September"},
+        {"contract":"Consultancy REL-2025","vendor":"M/s Reliable Consultants","value":"₹20 L","award_date":"2025-01-15","completion_date":"2025-06-30","status":"Completed","cpf":"100012","fy":"2025-26","month":"March"},
+        {"contract":"HSE Compliance Audit","vendor":"M/s SafetyFirst Auditors","value":"₹15 L","award_date":"2025-04-01","completion_date":"2025-10-31","status":"Ongoing","cpf":"100014","fy":"2025-26","month":"April"},
+        {"contract":"Legal Documentation Review","vendor":"M/s LegalEagle Associates","value":"₹12 L","award_date":"2025-05-01","completion_date":"2025-12-31","status":"Ongoing","cpf":"100015","fy":"2025-26","month":"February"},
     ]
     for cd in CONTRACTS:
         r = await db.execute(select(ContractStatus).where(ContractStatus.contract == cd["contract"]))
         if r.scalar_one_or_none(): continue
         u = user_map.get(cd["cpf"])
-        obj = ContractStatus(contract=cd["contract"],vendor=cd["vendor"],value=cd["value"],award_date=date.fromisoformat(cd["award_date"]) if cd.get("award_date") else None,completion_date=date.fromisoformat(cd["completion_date"]) if cd.get("completion_date") else None,status=cd["status"],created_by=u.id if u else None)
+        obj = ContractStatus(contract=cd["contract"],vendor=cd["vendor"],value=cd["value"],award_date=date.fromisoformat(cd["award_date"]) if cd.get("award_date") else None,completion_date=date.fromisoformat(cd["completion_date"]) if cd.get("completion_date") else None,status=cd["status"],fy=cd.get("fy"),month=cd.get("month"),created_by=u.id if u else None)
         db.add(obj)
     await db.commit()
 

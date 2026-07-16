@@ -105,7 +105,6 @@ async def activity_summary(
 
     rejected_files = [f for f in all_files if f.status == "Rejected"]
     total_rejections = len(rejected_files)
-
     # Pending files (all time, scoped)
     result_pend = await db.execute(
         select(File).where(File.status == "Pending").order_by(File.created_at.asc())

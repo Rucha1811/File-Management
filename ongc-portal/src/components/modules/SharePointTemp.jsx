@@ -1,29 +1,59 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "../../api";
 import { S, th, td, badge } from "../shared/styles";
 
-
+const ROLES = ["Public", "Operations", "GP-03 Team", "GP-06 Team", "Admin"];
 
 export function SharePointTemp({ onToast }) {
-  const [files, setFiles] = useState([
-    { id:1, name:"Daily_Report_2025-06-15.pdf", sharedBy:"R.K. Sharma", role:"Public", expiry:3600, sharedAt:Date.now()-1800 },
-    { id:2, name:"Block_Map_Cambay.pdf", sharedBy:"S. Patel", role:"GP-03 Team", expiry:7200, sharedAt:Date.now()-3600 },
-    { id:3, name:"Equipment_Schedule.xlsx", sharedBy:"Logistics", role:"Operations", expiry:1800, sharedAt:Date.now()-600 },
-  ]);
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [shareFile, setShareFile] = useState(null);
   const [shareRole, setShareRole] = useState("Public");
   const [shareHours, setShareHours] = useState(24);
 
-  useEffect(() => {
-    const iv = setInterval(() => setFiles(p => p.filter(f => Date.now() - f.sharedAt < f.expiry * 1000)), 1000);
-    return () => clearInterval(iv);
+  const fetchFiles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.listSharedFiles();
+      setFiles(data || []);
+    } catch { setFiles([]); }
+    finally { setLoading(false); }
   }, []);
 
-  const handleShare = () => {
+  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+
+  const handleShare = async () => {
     if (!shareFile) { onToast?.("Select a file to share", "error"); return; }
-    setFiles(p => [{ id:Date.now(), name:shareFile.name, sharedBy:"You", role:shareRole, expiry:shareHours*3600, sharedAt:Date.now() }, ...p]);
-    setShareFile(null);
-    onToast?.(`File shared for ${shareHours} hours (${shareRole})`, "success");
+    try {
+      await api.shareFile(shareFile, shareRole, shareHours);
+      setShareFile(null);
+      onToast?.(`File shared for ${shareHours} hours (${shareRole})`, "success");
+      fetchFiles();
+    } catch (e) {
+      onToast?.(e.message || "Share failed", "error");
+    }
+  };
+
+  const handleDownload = async (f) => {
+    try {
+      const res = await api.downloadSharedFile(f.id);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = f.file_name; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      onToast?.("Download failed", "error");
+    }
+  };
+
+  const handleDelete = async (f) => {
+    try {
+      await api.deleteSharedFile(f.id);
+      onToast?.("Shared file removed", "success");
+      fetchFiles();
+    } catch (e) {
+      onToast?.(e.message || "Delete failed", "error");
+    }
   };
 
   return (
@@ -36,11 +66,7 @@ export function SharePointTemp({ onToast }) {
           <div style={S.field}>
             <label style={S.label}>Access Role</label>
             <select style={S.select} value={shareRole} onChange={e=>setShareRole(e.target.value)}>
-              <option value="Public">Public (Anyone with Link)</option>
-              <option value="Operations">Operations Only</option>
-              <option value="GP-03 Team">GP-03 Team</option>
-              <option value="GP-06 Team">GP-06 Team</option>
-              <option value="Admin">Admin Only</option>
+              {ROLES.map(r => <option key={r} value={r}>{r === "Public" ? "Public (Anyone with Link)" : r}</option>)}
             </select>
           </div>
           <div style={S.field}>
@@ -52,21 +78,22 @@ export function SharePointTemp({ onToast }) {
       </div>
       <div style={S.section}>
         <div style={S.sectionTitle}>Shared Files</div>
-        {files.length === 0 ? (
+        {loading ? <div style={{textAlign:"center",padding:20,color:"#999"}}>Loading...</div> : files.length === 0 ? (
           <div style={{textAlign:"center",padding:20,color:"#999"}}>No active shared files.</div>
         ) : (
           <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr><th style={th}>File</th><th style={th}>Shared By</th><th style={th}>Role</th><th style={th}>Expires In</th><th style={th}>Status</th></tr></thead>
+            <thead><tr><th style={th}>File</th><th style={th}>Shared By</th><th style={th}>Role</th><th style={th}>Expires In</th><th style={th}>Downloads</th><th style={th}>Status</th><th style={th}></th></tr></thead>
             <tbody>{files.map((f,i)=>{
-              const remaining = f.expiry - (Date.now() - f.sharedAt)/1000;
-              const hrs = Math.floor(remaining/3600);
-              const mins = Math.floor((remaining%3600)/60);
+              const hrs = Math.floor(f.remaining_seconds / 3600);
+              const mins = Math.floor((f.remaining_seconds % 3600) / 60);
               return (
                 <tr key={f.id} style={{background:i%2===0?"#fff":"#f8f9fa"}}>
-                  <td style={td}><span style={{color:"#0b3d91",cursor:"pointer"}}>{f.name}</span></td>
-                  <td style={td}>{f.sharedBy}</td><td style={td}>{f.role}</td>
-                  <td style={{...td,fontWeight:600,color:remaining<600?"#e74c3c":"#333"}}>{hrs}h {mins}m</td>
-                  <td style={td}><span style={badge(remaining>0?"#1B5E20":"#999")}>{remaining>0?"Active":"Expired"}</span></td>
+                  <td style={td}><span style={{color:"#0b3d91",cursor:"pointer"}} onClick={() => handleDownload(f)}>{f.file_name}</span></td>
+                  <td style={td}>{f.shared_by_name}</td><td style={td}>{f.role}</td>
+                  <td style={{...td,fontWeight:600,color:f.remaining_seconds < 600 ? "#e74c3c" : "#333"}}>{hrs}h {mins}m</td>
+                  <td style={td}>{f.download_count || 0}</td>
+                  <td style={td}><span style={badge(f.is_active ? "#1B5E20" : "#999")}>{f.is_active ? "Active" : "Expired"}</span></td>
+                  <td style={td}><button style={{background:"none",border:"none",color:"#c62828",cursor:"pointer",fontSize:12}} onClick={() => handleDelete(f)}>Remove</button></td>
                 </tr>
               );
             })}</tbody>
@@ -76,4 +103,3 @@ export function SharePointTemp({ onToast }) {
     </div>
   );
 }
-

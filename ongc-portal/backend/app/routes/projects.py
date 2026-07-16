@@ -64,9 +64,46 @@ def normalize_header(col):
     s = re.sub(r'\s+', ' ', s)
     for field, synonyms in COLUMN_SYNONYMS.items():
         for syn in synonyms:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
+
+PROJECT_FIELD_LABELS = {
+    "project_name": "Project Name",
+    "number": "SI No",
+    "survey_type": "Survey Type",
+    "contractor_name": "Contractor / Agency Name",
+    "area_name": "Area Name",
+    "section": "Section / GP Code",
+    "gp_code": "GP Code",
+    "party_chief": "Party Chief",
+    "year_field_season": "Field Season / Year",
+    "start_date": "Start Date",
+    "end_date": "End Date",
+    "project_period": "Project Period",
+    "target_vs_achievement": "Volume / Target vs Achievement",
+    "survey_objective": "Survey Objective",
+    "xy_coordinates": "XY Coordinates",
+    "survey_grid_params": "Survey Grid Parameters",
+    "acquisition_geometry": "Acquisition Geometry",
+    "instrument_parameters": "Instrument Parameters",
+    "sensor_type": "Sensor Type",
+    "source_parameters": "Source Parameters",
+    "total_cost": "Total Cost",
+    "per_unit_cost": "Per Unit Cost",
+    "project_highlights": "Project Highlights / Remarks",
+    "category": "Category",
+    "location": "Location (Onland/Offshore)",
+    "status": "Status",
+}
+
+@router.get("/excel-fields")
+async def get_excel_fields(user: User = Depends(get_current_user)):
+    """Return all importable project fields with labels, for the Excel column mapping UI."""
+    return [
+        {"field_name": field, "label": PROJECT_FIELD_LABELS.get(field, field.replace("_", " ").title())}
+        for field in PROJECT_FIELD_LABELS
+    ]
 
 @router.get("/")
 async def list_projects(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -515,7 +552,7 @@ async def excel_import(
             if col_name in col_idx and field_name in valid_fields:
                 val = ws.cell(row=r, column=col_idx[col_name] + 1).value
                 if val is not None:
-                    row_data[field_name] = str(val).strip()
+                    row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                     if field_name == "project_name":
                         has_data = True
         if not has_data:

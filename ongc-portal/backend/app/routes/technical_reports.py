@@ -157,7 +157,7 @@ def _norm_rep(s, syn_map):
     s = re.sub(r'\s+', ' ', s)
     for field, synonyms in syn_map.items():
         for syn in synonyms:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
 
@@ -262,11 +262,11 @@ async def report_excel_import(
             if val is None:
                 continue
             if field_name in fixed_fields:
-                row_data[field_name] = str(val).strip()
+                row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                 if field_name == "title":
                     has_data = True
             else:
-                dynamic_vals[field_name] = str(val).strip()
+                dynamic_vals[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
         if not has_data:
             continue

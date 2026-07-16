@@ -57,6 +57,24 @@ async def derive_from_section(db: AsyncSession, section: str) -> dict:
     return result
 
 
+@router.get("/public")
+async def list_users_public(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(User).options(selectinload(User.role), selectinload(User.ops_manager))
+    )
+    users = result.scalars().all()
+    return [
+        {
+            "cpf": u.cpf,
+            "name": u.name,
+            "area": u.area,
+            "role": u.role.name if u.role else "viewer",
+            "user_category": u.user_category,
+            "ops_manager_name": u.ops_manager.name if u.ops_manager else None,
+        }
+        for u in users if u.is_active
+    ]
+
 @router.get("/")
 async def list_users(
     db: AsyncSession = Depends(get_db),

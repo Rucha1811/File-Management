@@ -5,6 +5,7 @@ import { DonutSimple } from "../shared/Charts";
 import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
 import FileUploadForm from "../FileUploadForm";
+import { ModuleFilesSection } from "../shared/ModuleFilesSection";
 
 
 
@@ -194,6 +195,7 @@ export function DataProcessing({ initialTab, user, onToast }) {
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelDataPreview} apiImport={api.excelDataImport} fields="data_processing" onSuccess={()=>{load(active)}} />
       {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
+      <ModuleFilesSection section={active} user={user} onToast={onToast} />
       </>)}
     </div>
   );

@@ -118,6 +118,7 @@ export const api = {
 
   // USERS
   listUsers: () => request("GET", "/api/users/"),
+  listUsersPublic: () => request("GET", "/api/users/public"),
   createUser: (payload) => request("POST", "/api/users/create", payload),
   updateUserRole: (userId, role_name) => request("PUT", `/api/users/${userId}/role`, { role_name }),
   updateUserProfile: (userId, payload) => request("PUT", `/api/users/${userId}/profile`, payload),
@@ -212,6 +213,7 @@ export const api = {
     });
   },
   deleteProject: (id) => request("DELETE", `/api/projects/${id}`),
+  getProjectExcelFields: () => request("GET", "/api/projects/excel-fields"),
   excelPreview: (formData) => {
     const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
@@ -276,6 +278,7 @@ export const api = {
     });
   },
   deleteTarget: (targetId) => request("DELETE", `/api/targets/${targetId}`),
+  getTargetExcelFields: () => request("GET", "/api/targets/excel-fields"),
   excelTargetPreview: (formData) => {
     const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
@@ -365,14 +368,38 @@ export const api = {
     });
   },
 
+  // ─── SHAREPOINT (File Sharing) ───
+  listSharedFiles: () => request("GET", "/api/sharepoint/"),
+  shareFile: (file, role, expiryHours) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("role", role);
+    fd.append("expiry_hours", String(expiryHours));
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/sharepoint/share`, { method: "POST", headers, body: fd }).then(async (r) => {
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Share failed"); }
+      return r.json();
+    });
+  },
+  downloadSharedFile: (fileId) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/sharepoint/download/${fileId}`, { headers });
+  },
+  deleteSharedFile: (fileId) => request("DELETE", `/api/sharepoint/${fileId}`),
+
   // ─── REPORT BUILDER ───
   listReportTemplates: () => request("GET", "/api/report-builder/templates"),
-  createReportTemplate: (name, description, period_type, sections) => {
+  createReportTemplate: (name, description, period_type, sections, assigned_roles = [], section = null, area = null) => {
     const params = new URLSearchParams();
     params.set("name", name);
     if (description) params.set("description", description);
     params.set("period_type", period_type);
-    params.set("sections", JSON.stringify(sections));
+    params.set("sections", typeof sections === "string" ? sections : JSON.stringify(sections));
+    params.set("assigned_roles", typeof assigned_roles === "string" ? assigned_roles : JSON.stringify(assigned_roles));
+    if (section) params.set("section", section);
+    if (area) params.set("area", area);
     const headers = {};
     if (getToken()) headers["Authorization"] = `Bearer ${getToken()}`;
     return fetch(`${BASE}/api/report-builder/templates/create`, {
@@ -381,8 +408,15 @@ export const api = {
   },
   updateReportTemplate: (id, data) => {
     const params = new URLSearchParams();
-    Object.entries(data).forEach(([k,v]) => { if (v) params.set(k, v); });
-    if (data.sections) params.set("sections", JSON.stringify(data.sections));
+    Object.entries(data).forEach(([k,v]) => {
+      if (v !== null && v !== undefined) {
+        if (typeof v === "object") {
+          params.set(k, JSON.stringify(v));
+        } else {
+          params.set(k, v);
+        }
+      }
+    });
     const headers = {};
     if (getToken()) headers["Authorization"] = `Bearer ${getToken()}`;
     return fetch(`${BASE}/api/report-builder/templates/${id}`, {
@@ -413,17 +447,18 @@ export const api = {
     }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
   },
   getPeriodAssignments: (period_id) => request("GET", `/api/report-builder/periods/${period_id}/assignments`),
-  listReportSubmissions: (period_id, section_key, assigned_to) => {
+  getFillStatus: (period_id) => request("GET", `/api/report-builder/periods/${period_id}/fill-status`),
+  listReportSubmissions: (period_id, section_key, assigned_to, user_id) => {
     let url = "/api/report-builder/submissions?";
     if (period_id) url += `period_id=${period_id}&`;
     if (section_key) url += `section_key=${section_key}&`;
     if (assigned_to) url += `assigned_to=${assigned_to}&`;
+    if (user_id) url += `user_id=${user_id}&`;
     return request("GET", url);
   },
-  saveReportSubmission: (period_id, section_key, assigned_to, field_values, status) => {
+  saveReportSubmission: (period_id, field_values, status) => {
     const params = new URLSearchParams();
-    params.set("period_id", period_id); params.set("section_key", section_key);
-    if (assigned_to) params.set("assigned_to", assigned_to);
+    params.set("period_id", period_id);
     params.set("field_values", JSON.stringify(field_values));
     params.set("status", status);
     const headers = {};
@@ -446,6 +481,14 @@ export const api = {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       return { success: true };
+    });
+  },
+  seedReportDemoData: () => {
+    const headers = {};
+    if (getToken()) headers["Authorization"] = `Bearer ${getToken()}`;
+    return fetch(`${BASE}/api/report-builder/seed-demo`, { method: "POST", headers }).then(async (r) => {
+      if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); }
+      return r.json();
     });
   },
 
@@ -516,7 +559,13 @@ export const api = {
   },
 
   // ─── CONTRACT STATUS ───
-  listContractStatus: () => request("GET", "/api/contract-status/"),
+  listContractStatus: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.fy) q.set("fy", params.fy);
+    if (params.month && params.month !== "All") q.set("month", params.month);
+    if (params.section) q.set("section", params.section);
+    return request("GET", `/api/contract-status/?${q}`);
+  },
   createContractStatus: (formData) => {
     const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
@@ -540,7 +589,23 @@ export const api = {
   },
 
   // ─── FUND MANAGEMENT ───
-  listFundManagement: () => request("GET", "/api/fund-management/"),
+  listFundManagement: (params) => {
+    const q = new URLSearchParams();
+    if (params?.fy) q.set("fy", params.fy);
+    if (params?.month) q.set("month", params.month);
+    if (params?.project) q.set("project", params.project);
+    if (params?.category) q.set("category", params.category);
+    if (params?.expense_type) q.set("expense_type", params.expense_type);
+    const qs = q.toString();
+    return request("GET", qs ? `/api/fund-management/?${qs}` : "/api/fund-management/");
+  },
+  getFundHistory: (id) => request("GET", `/api/fund-management/${id}/history`),
+  getFundMonthEndSummary: (fy, month) => {
+    const q = new URLSearchParams();
+    if (fy) q.set("fy", fy);
+    if (month) q.set("month", month);
+    return request("GET", `/api/fund-management/month-end-summary?${q.toString()}`);
+  },
   createFundManagement: (formData) => {
     const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
@@ -681,6 +746,54 @@ export const api = {
     const headers = {};
     if (_token) headers["Authorization"] = `Bearer ${_token}`;
     return fetch(`${BASE}/api/hse-incidents/upload-excel/import`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Import failed"); } return r.json(); });
+  },
+
+  // ─── HSE CERTIFICATES ───
+  listHSECertificates: () => request("GET", "/api/hse-certificates/"),
+  createHSECertificate: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-certificates/create`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
+  },
+  updateHSECertificate: (id, formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-certificates/${id}`, { method: "PUT", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
+  },
+  deleteHSECertificate: (id) => request("DELETE", `/api/hse-certificates/${id}`),
+  excelHSECertificatePreview: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-certificates/upload-excel/preview`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Preview failed"); } return r.json(); });
+  },
+  excelHSECertificateImport: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-certificates/upload-excel/import`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Import failed"); } return r.json(); });
+  },
+
+  // ─── HSE AUDITS ───
+  listHSEAudits: () => request("GET", "/api/hse-audits/"),
+  createHSEAudit: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-audits/create`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
+  },
+  updateHSEAudit: (id, formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-audits/${id}`, { method: "PUT", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Failed"); } return r.json(); });
+  },
+  deleteHSEAudit: (id) => request("DELETE", `/api/hse-audits/${id}`),
+  excelHSEAuditPreview: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-audits/upload-excel/preview`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Preview failed"); } return r.json(); });
+  },
+  excelHSEAuditImport: (formData) => {
+    const headers = {};
+    if (_token) headers["Authorization"] = `Bearer ${_token}`;
+    return fetch(`${BASE}/api/hse-audits/upload-excel/import`, { method: "POST", headers, body: formData }).then(async (r) => { if (!r.ok) { const d = await r.json(); throw new Error(d.detail || "Import failed"); } return r.json(); });
   },
 
   // ─── AWP ITEMS ───

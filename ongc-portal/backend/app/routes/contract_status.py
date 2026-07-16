@@ -18,7 +18,7 @@ def _norm_hdr(s):
     s = re.sub(r'\s+', ' ', s)
     for field, syns in COLUMN_SYNONYMS.items():
         for syn in syns:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
 
@@ -38,15 +38,21 @@ async def _scope_query(db, user, section=None):
 @router.get("/")
 async def list_items(
     section: str = None,
+    fy: str = None,
+    month: str = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     q = await _scope_query(db, user, section)
+    if fy:
+        q = q.where(ContractStatus.fy == fy)
+    if month and month != "All":
+        q = q.where(ContractStatus.month == month)
     result = await db.execute(q)
     items = result.scalars().all()
     out = []
     for x in items:
-        d = {"id": x.id}
+        d = {"id": x.id, "fy": x.fy, "month": x.month}
         if x.dynamic_fields:
             try:
                 df = json.loads(x.dynamic_fields)
@@ -62,12 +68,14 @@ async def list_items(
 @router.post("/create", status_code=201)
 async def create_item(
     dynamic_fields: str = Form(None),
-        contract: str = Form(None),
+    contract: str = Form(None),
     vendor: str = Form(None),
     value: str = Form(None),
     award_date: str = Form(None),
     completion_date: str = Form(None),
     status: str = Form(None),
+    fy: str = Form(None),
+    month: str = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -75,13 +83,15 @@ async def create_item(
     if role_name not in ("admin", "ops_manager", "data_creator"):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     obj = ContractStatus(
-                dynamic_fields=dynamic_fields,
+        dynamic_fields=dynamic_fields,
         contract=contract,
         vendor=vendor,
         value=value,
         award_date=date_type.fromisoformat(award_date) if award_date else None,
         completion_date=date_type.fromisoformat(completion_date) if completion_date else None,
         status=status,
+        fy=fy,
+        month=month,
         created_by=user.id,
     )
     db.add(obj)
@@ -93,12 +103,14 @@ async def create_item(
 async def update_item(
     item_id: int,
     dynamic_fields: str = Form(None),
-        contract: str = Form(None),
+    contract: str = Form(None),
     vendor: str = Form(None),
     value: str = Form(None),
     award_date: str = Form(None),
     completion_date: str = Form(None),
     status: str = Form(None),
+    fy: str = Form(None),
+    month: str = Form(None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -123,6 +135,10 @@ async def update_item(
         obj.status = status
     if dynamic_fields is not None:
         obj.dynamic_fields = dynamic_fields
+    if fy is not None:
+        obj.fy = fy
+    if month is not None:
+        obj.month = month
     await db.commit()
     return {"success": True}
 
@@ -225,7 +241,7 @@ async def excel_import(
         ws = wb.active
     headers = [c.value for c in ws[1] if c.value]
     col_idx = {h: i for i, h in enumerate(headers)}
-    fixed_fields = {"award_date","completion_date","contract","status","value","vendor"}
+    fixed_fields = {"award_date","completion_date","contract","status","value","vendor","fy","month"}
     title_header = next((k for k,v in mapping_dict.items() if v=="contract"), None)
     existing_names = set()
     if conflict == "skip" and title_header:
@@ -244,10 +260,10 @@ async def excel_import(
             if val is None:
                 continue
             if field_name in fixed_fields:
-                row_data[field_name] = str(val).strip()
+                row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
             else:
-                dynamic_vals[field_name] = str(val).strip() if val else ""
+                dynamic_vals[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
         if not has_data:
             continue
@@ -262,6 +278,8 @@ async def excel_import(
             award_date=row_data.get("award_date"),
             completion_date=row_data.get("completion_date"),
             status=row_data.get("status"),
+            fy=row_data.get("fy"),
+            month=row_data.get("month"),
             dynamic_fields=json.dumps(dynamic_vals) if dynamic_vals else None,
             created_by=user.id,
         )

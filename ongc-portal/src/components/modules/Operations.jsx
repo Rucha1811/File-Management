@@ -14,7 +14,7 @@ function getOpsTabs() {
   return ["Base Office","Contracts","HSE","GP-03","GP-06"];
 }
 
-export function Operations({ initialTab, user }) {
+export function Operations({ initialTab, user, onToast }) {
   const [tabs, setTabs] = useState(getOpsTabs);
   const [active, setActive] = useState(initialTab || tabs[0]);
   const [files, setFiles] = useState([]);
@@ -281,11 +281,11 @@ export function Operations({ initialTab, user }) {
               </div>
             </>
           )}
-          <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={null} apiPreview={api.excelHSEPreview} apiImport={api.excelHSEImport} fields="hse_incident" onSuccess={()=>{loadHse()}} />
+          <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelHSEPreview} apiImport={api.excelHSEImport} fields="hse_incident" onSuccess={()=>{loadHse()}} />
         </>
       ) : (
         <>
-          <FileUploadForm user={user} section={active} onUpload={loadFiles} onToast={null} />
+          <FileUploadForm user={user} section={active} onUpload={loadFiles} onToast={onToast} />
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
         {[["Total Files",files.length,C0.blue,null],["Approved",byStatus.Approved,C0.green,f=>f.status==="Approved"],["Pending",byStatus.Pending,C0.orange,f=>f.status==="Pending"],["Rejected",byStatus.Rejected,C0.red,f=>f.status==="Rejected"]].map(([l,v,c,fl])=>(

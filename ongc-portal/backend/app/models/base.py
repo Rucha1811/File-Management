@@ -250,6 +250,9 @@ class ReportTemplate(Base):
     description = Column(Text)
     period_type = Column(String(20), default="monthly")
     sections = Column(Text, nullable=False)
+    assigned_roles = Column(Text, default="[]")
+    section = Column(String(50))
+    area = Column(String(50))
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -273,6 +276,7 @@ class ReportSubmission(Base):
     period_id = Column(Integer, ForeignKey("report_periods.id", ondelete="CASCADE"), nullable=False)
     section_key = Column(String(100), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
     field_values = Column(Text, nullable=False)
     status = Column(String(20), default="draft")
     submitted_at = Column(DateTime(timezone=True))
@@ -280,6 +284,7 @@ class ReportSubmission(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     period = relationship("ReportPeriod")
     assignee = relationship("User", foreign_keys=[assigned_to])
+    submitter = relationship("User", foreign_keys=[user_id])
 
 class ProgressReport(Base):
     __tablename__ = "progress_reports"
@@ -290,6 +295,14 @@ class ProgressReport(Base):
     completed = Column(Float, default=0)
     coverage = Column(String(20))
     status = Column(String(50), default="In Progress")
+    report_image_path = Column(String(500), nullable=True)
+    report_period = Column(String(50), nullable=True)
+    version = Column(Integer, default=1)
+    parent_version_id = Column(Integer, nullable=True)
+    report_name = Column(String(255), nullable=True)
+    share_token = Column(String(100), nullable=True)
+    share_expires_at = Column(DateTime(timezone=True), nullable=True)
+    auto_delete_at = Column(DateTime(timezone=True), nullable=True)
     dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -319,6 +332,8 @@ class ContractStatus(Base):
     award_date = Column(Date)
     completion_date = Column(Date)
     status = Column(String(50), default="Ongoing")
+    fy = Column(String(20), nullable=True)
+    month = Column(String(20), nullable=True)
     dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -332,6 +347,14 @@ class FundManagement(Base):
     allocated = Column(Float, default=0)
     spent = Column(Float, default=0)
     remaining = Column(Float, default=0)
+    fy = Column(String(50), nullable=True)
+    month = Column(String(50), nullable=True)
+    project = Column(String(255), nullable=True)
+    category = Column(String(50), nullable=True)
+    amount = Column(Float, default=0)
+    audited_statement = Column(String(255), nullable=True)
+    expense_type = Column(String(50), nullable=True)
+    month_end_summary = Column(Text, nullable=True)
     dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -404,6 +427,8 @@ class HSEIncident(Base):
     location = Column(String(255))
     description = Column(Text)
     action_taken = Column(Text)
+    severity = Column(String(20), nullable=True)
+    status = Column(String(50), default="Open")
     dynamic_fields = Column(Text)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -554,3 +579,131 @@ class TargetMonthHistory(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     target = relationship("AcquisitionTarget", foreign_keys=[target_id])
     changer = relationship("User", foreign_keys=[changed_by])
+
+
+class HSECertificate(Base):
+    __tablename__ = "hse_certificates"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    issued_to = Column(String(255))
+    issue_date = Column(Date)
+    expiry_date = Column(Date)
+    status = Column(String(50))
+    certificate_number = Column(String(100), nullable=True)
+    issuing_authority = Column(String(255), nullable=True)
+    validity_days = Column(Integer, nullable=True)
+    certificate_type = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    dynamic_fields = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class HSEAudit(Base):
+    __tablename__ = "hse_audits"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    audit_date = Column(Date)
+    observation = Column(Text)
+    action_taken_report = Column(Text)
+    responsible_person = Column(String(255))
+    due_date = Column(Date)
+    status = Column(String(50))
+    pending_action = Column(Boolean, default=True)
+    action_priority = Column(String(20), nullable=True)
+    closure_date = Column(Date, nullable=True)
+    audit_type = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True)
+    dynamic_fields = Column(Text)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+
+# History tracking tables for audit trail
+class FundManagementHistory(Base):
+    __tablename__ = "fund_management_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    fund_id = Column(Integer, ForeignKey("fund_management.id", ondelete="CASCADE"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    action = Column(String(20), nullable=False)
+    field_name = Column(String(50), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    changes_json = Column(Text, nullable=True)
+    user = relationship("User", foreign_keys=[changed_by])
+
+
+class HSECertificateHistory(Base):
+    __tablename__ = "hse_certificate_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    certificate_id = Column(Integer, ForeignKey("hse_certificates.id", ondelete="CASCADE"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    action = Column(String(20), nullable=False)
+    field_name = Column(String(50), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    changes_json = Column(Text, nullable=True)
+    user = relationship("User", foreign_keys=[changed_by])
+
+
+class HSEAuditHistory(Base):
+    __tablename__ = "hse_audit_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    audit_id = Column(Integer, ForeignKey("hse_audits.id", ondelete="CASCADE"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    action = Column(String(20), nullable=False)
+    field_name = Column(String(50), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    changes_json = Column(Text, nullable=True)
+    user = relationship("User", foreign_keys=[changed_by])
+
+
+class ProgressReportHistory(Base):
+    __tablename__ = "progress_report_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_id = Column(Integer, ForeignKey("progress_reports.id", ondelete="CASCADE"), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    action = Column(String(20), nullable=False)
+    field_name = Column(String(50), nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    changes_json = Column(Text, nullable=True)
+    user = relationship("User", foreign_keys=[changed_by])
+
+
+# Configuration table for dynamic values (no hardcoding!)
+class SharedFile(Base):
+    __tablename__ = "shared_files"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_name = Column(String(255), nullable=False)
+    file_data = Column(LargeBinary, nullable=False)
+    file_type = Column(String(50), default="application/octet-stream")
+    shared_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    shared_by_name = Column(String(100))
+    role = Column(String(50), default="Public")
+    expiry_seconds = Column(Integer, default=86400)
+    shared_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
+    download_count = Column(Integer, default=0)
+    sharer = relationship("User", foreign_keys=[shared_by])
+
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category = Column(String(50), nullable=False, index=True)
+    value = Column(String(255), nullable=False)
+    display_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

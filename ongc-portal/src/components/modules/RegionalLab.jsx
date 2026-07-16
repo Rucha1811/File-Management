@@ -4,6 +4,7 @@ import { S, th, td, badge, C0 } from "../shared/styles";
 import { DonutSimple } from "../shared/Charts";
 import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
+import { ModuleFilesSection } from "../shared/ModuleFilesSection";
 
 
 
@@ -154,6 +155,7 @@ export function RegionalLab({ initialTab, user, onToast }) {
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelLabPreview} apiImport={api.excelLabImport} fields="regional_lab" onSuccess={()=>{load(active)}} />
       {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
+      <ModuleFilesSection section={active} user={user} onToast={onToast} />
       </> )}
     </div>
   );

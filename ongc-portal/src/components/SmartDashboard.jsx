@@ -161,6 +161,9 @@ export default function SmartDashboard({ user, onToast }) {
   const [berProjects, setBerProjects] = useState([]);
   const [berSelectedProjects, setBerSelectedProjects] = useState([]);
   const [berAllRecords, setBerAllRecords] = useState([]);
+  const [moduleSummary, setModuleSummary] = useState(null);
+  const currentDashFy = (() => { const y = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1; return `${y}-${String(y+1).slice(2)}`; })();
+  const [dashFy, setDashFy] = useState(currentDashFy);
 
   const isAdmin = role === "admin";
   const isOps = role === "ops_manager";
@@ -176,7 +179,8 @@ export default function SmartDashboard({ user, onToast }) {
       api.stage2Monthly(),
       api.stage2Yearly(),
       api.stage2Targets(),
-    ]).then(([s, h, all, s2m, s2y, s2t]) => {
+      api.getModuleSummary(),
+    ]).then(([s, h, all, s2m, s2y, s2t, ms]) => {
       setStats(s || { total:0, pending:0, approved:0, rejected:0, bySection:{}, byClassification:{}, byType:{} });
       setHighlights(h || []);
       const norm = (all || []).map(f => ({
@@ -195,6 +199,7 @@ export default function SmartDashboard({ user, onToast }) {
       setS2Yearly(s2y || { be:{target:0,achieved:0}, re:{target:0,achieved:0} });
       setBerProjects([...new Set((s2t||[]).map(t => t.project_name).filter(Boolean))].sort());
       setBerAllRecords(s2t || []);
+      setModuleSummary(ms || null);
     }).catch(() => {
       setStats({ total:0, pending:0, approved:0, rejected:0, bySection:{}, byClassification:{}, byType:{} });
       setHighlights([]);
@@ -203,8 +208,27 @@ export default function SmartDashboard({ user, onToast }) {
       setS2Yearly({ be:{target:0,achieved:0}, re:{target:0,achieved:0} });
       setBerProjects([]);
       setBerAllRecords([]);
+      setModuleSummary(null);
     }).finally(() => setLoading(false));
   }, [user.id]);
+
+  useEffect(() => {
+    Promise.all([
+      api.stage2Monthly(dashFy),
+      api.stage2Yearly(dashFy),
+      api.stage2Targets(dashFy),
+    ]).then(([s2m, s2y, s2t]) => {
+      setS2Monthly(s2m || {});
+      setS2Yearly(s2y || { be:{target:0,achieved:0}, re:{target:0,achieved:0} });
+      setBerProjects([...new Set((s2t||[]).map(t => t.project_name).filter(Boolean))].sort());
+      setBerAllRecords(s2t || []);
+    }).catch(() => {
+      setS2Monthly({});
+      setS2Yearly({ be:{target:0,achieved:0}, re:{target:0,achieved:0} });
+      setBerProjects([]);
+      setBerAllRecords([]);
+    });
+  }, [dashFy]);
 
   const toggleBerProject = (pn) => {
     setBerSelectedProjects(prev =>
@@ -282,8 +306,14 @@ export default function SmartDashboard({ user, onToast }) {
         return (
         <div style={S.section}>
           <div style={{ fontSize:15, fontWeight:700, color:"#0b3d91", marginBottom:12 }}>BE & RE Targets & Achievement</div>
-          {/* ── project selectors ── */}
+          {/* ── FY filter + project selectors ── */}
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:14 }}>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <label style={{fontSize:12,color:"#666"}}>FY:</label>
+              <input style={{width:85,padding:"6px 8px",border:"1px solid #d0d5dd",borderRadius:6,fontSize:13,textAlign:"center"}} value={dashFy} onChange={e=>setDashFy(e.target.value)} placeholder="YYYY-YY" />
+              <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=dashFy.match(/^(\d{4})/);if(m){const n=Number(m[1])-1;setDashFy(`${n}-${String(n+1).slice(2)}`)}}}>◀</button>
+              <button style={{padding:"2px 8px",border:"1px solid #ccc",borderRadius:3,background:"#fff",cursor:"pointer",fontSize:13}} onClick={()=>{const m=dashFy.match(/^(\d{4})/);if(m){const n=Number(m[1])+1;setDashFy(`${n}-${String(n+1).slice(2)}`)}}}>▶</button>
+            </div>
             <select style={{ padding:"8px 12px", border:"1px solid #d0d5dd", borderRadius:6, fontSize:14, background:"#fff", minWidth:220 }} value={activeProjects[0]||""} onChange={e => {
               const v = e.target.value;
               if (!v) setBerSelectedProjects([]);
@@ -405,6 +435,33 @@ export default function SmartDashboard({ user, onToast }) {
         </div>
         );
       })()}
+
+      {/* ── Module Summary ── */}
+      {moduleSummary && moduleSummary.modules && (
+        <div style={S.section}>
+          <div style={{ fontSize:15, fontWeight:700, color:"#0b3d91", marginBottom:14 }}>Module Overview ({moduleSummary.total} total records)</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(160px, 1fr))", gap:10 }}>
+            {Object.entries(moduleSummary.modules).map(([key, mod]) => {
+              const statusColors = { "N/A":"#888", Open:"#c62828", "In Progress":"#e65100", Completed:"#1b5e20", Closed:"#2e7d32", Resolved:"#2e7d32", Pending:"#f9a825", Approved:"#1b5e20", Rejected:"#c62828", Draft:"#607d8b", Valid:"#1b5e20", Expired:"#c62828", "On Track":"#1b5e20", Ongoing:"#e65100" };
+              const total = mod.total;
+              const topStatus = Object.entries(mod.status_counts).sort((a,b) => b[1] - a[1])[0];
+              return (
+                <div key={key} style={{ background:"#f9fafb", borderRadius:8, padding:"12px 14px", cursor:"pointer", border:"1px solid #e8edf2" }}
+                  onClick={() => setDrillDown({ title: mod.label, data: mod.recent.map(r => ({ Name: r.name, Status: r.status, "Created": r.created_at?.split("T")[0]||"—" })) })}>
+                  <div style={{ fontSize:11, fontWeight:600, color:"#888", textTransform:"uppercase", letterSpacing:0.3, marginBottom:2 }}>{mod.label}</div>
+                  <div style={{ fontSize:26, fontWeight:800, color:"#0b3d91" }}>{total}</div>
+                  {topStatus && (
+                    <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:4 }}>
+                      <span style={{ width:8, height:8, borderRadius:"50%", background: statusColors[topStatus[0]]||"#888", flexShrink:0 }} />
+                      <span style={{ fontSize:11, color:"#666" }}>{topStatus[0]}: {topStatus[1]}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {highlights.length > 0 && !isViewer && (
         <div style={S.section}>

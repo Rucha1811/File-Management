@@ -4,6 +4,7 @@ import { S, th, td, badge, C0 } from "../shared/styles";
 import { VBarSimple, DonutSimple, COL0 } from "../shared/Charts";
 import { DrillDownModal } from "../shared/DrillDownModal";
 import ExcelUploadModal from "../ExcelUploadModal";
+import { ModuleFilesSection } from "../shared/ModuleFilesSection";
 
 
 
@@ -216,6 +217,7 @@ export function ReportingAppraisals({ initialTab, user, onToast }) {
       </div>
       <ExcelUploadModal show={showExcelModal} onClose={()=>setShowExcelModal(false)} onToast={onToast} apiPreview={api.excelAppraisalPreview} apiImport={api.excelAppraisalImport} fields="reporting_appraisal" onSuccess={()=>{load(active)}} />
       {drillDown && <DrillDownModal title={drillDown.title} data={drillDown.data} onClose={() => setDrillDown(null)} />}
+      <ModuleFilesSection section={active} user={user} onToast={onToast} />
       </> )}
     </div>
   );

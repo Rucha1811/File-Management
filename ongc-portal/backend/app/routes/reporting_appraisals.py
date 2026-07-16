@@ -18,7 +18,7 @@ def _norm_hdr(s):
     s = re.sub(r'\s+', ' ', s)
     for field, syns in COLUMN_SYNONYMS.items():
         for syn in syns:
-            if s == syn or s.startswith(syn) or syn.startswith(s):
+            if s == syn or s.startswith(syn):
                 return field
     return None
 
@@ -251,10 +251,10 @@ async def excel_import(
             if val is None:
                 continue
             if field_name in fixed_fields:
-                row_data[field_name] = str(val).strip()
+                row_data[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
             else:
-                dynamic_vals[field_name] = str(val).strip()
+                dynamic_vals[field_name] = str(val).strip() if isinstance(val, str) else val
                 has_data = True
         if not has_data:
             continue

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.base import AcquisitionTarget, ManpowerEmployee, User, TargetMonthHistory
 from app.auth.deps import get_current_user
@@ -374,7 +375,51 @@ async def list_manpower(
     if section:
         q = q.where(ManpowerEmployee.section == section)
     r = await db.execute(q)
-    return r.scalars().all()
+    emp_rows = r.scalars().all()
+    emp_cpfs = {m.cpf_no for m in emp_rows if m.cpf_no}
+
+    # Also fetch users from the system (exclude those already in manpower_employees)
+    uq = select(User).options(selectinload(User.role)).where(User.is_active == True, User.cpf != None)
+    ur = await db.execute(uq)
+    system_users = ur.scalars().all()
+
+    result = []
+    for m in emp_rows:
+        result.append({
+            "id": m.id,
+            "source": "seeded",
+            "section": m.section,
+            "basin": m.basin,
+            "sl_no": m.sl_no,
+            "cpf_no": m.cpf_no,
+            "name": m.name,
+            "designation": m.designation,
+            "mobile": m.mobile,
+            "level": m.level,
+            "crc": m.crc,
+            "assignment": m.assignment,
+            "created_at": str(m.created_at) if m.created_at else None,
+        })
+
+    for su in system_users:
+        if su.cpf and su.cpf not in emp_cpfs:
+            result.append({
+                "id": f"user_{su.id}",
+                "source": "system",
+                "section": su.section or "—",
+                "basin": None,
+                "sl_no": None,
+                "cpf_no": su.cpf,
+                "name": su.name,
+                "designation": su.designation or "—",
+                "mobile": None,
+                "level": su.level or 0,
+                "crc": None,
+                "assignment": su.role.name if su.role else "",
+                "created_at": str(su.created_at) if su.created_at else None,
+            })
+
+    return result
 
 
 @router.get("/manpower-employees/sections")
@@ -394,7 +439,19 @@ async def manpower_summary(db: AsyncSession = Depends(get_db), user: User = Depe
         by_section[sec] = by_section.get(sec, 0) + 1
         lvl = m.level or "Unknown"
         by_level[lvl] = by_level.get(lvl, 0) + 1
-    return {"total": len(rows), "by_section": by_section, "by_level": by_level}
+
+    # Include system users (not already in manpower)
+    ur = await db.execute(select(User).options(selectinload(User.role)).where(User.is_active == True, User.cpf != None))
+    emp_cpfs = {m.cpf_no for m in rows if m.cpf_no}
+    for su in ur.scalars().all():
+        if su.cpf and su.cpf not in emp_cpfs:
+            sec = su.section or "Unknown"
+            by_section[sec] = by_section.get(sec, 0) + 1
+            lvl = su.level or "Unknown"
+            by_level[str(lvl)] = by_level.get(str(lvl), 0) + 1
+
+    total = sum(by_section.values())
+    return {"total": total, "by_section": by_section, "by_level": by_level}
 
 
 @router.post("/manpower-employees")
